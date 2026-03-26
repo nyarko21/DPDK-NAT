@@ -26,12 +26,12 @@ signal_handler(int signum)
 
 static const struct rte_eth_conf port_conf_default = {
     .rxmode = {
-        .mq_mode = ETH_MQ_RX_NONE,       // single queue
+        .mq_mode = RTE_ETH_MQ_RX_NONE,       // single queue
         .offloads = 0,                   // adjust RX offloads if needed
         .max_lro_pkt_size = 0,           // only relevant for LRO
     },
     .txmode = {
-        .mq_mode = ETH_MQ_TX_NONE
+        .mq_mode = RTE_ETH_MQ_RX_NONE
     }
 };
 

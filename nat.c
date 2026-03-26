@@ -25,7 +25,9 @@ signal_handler(int signum)
 }
 
 static const struct rte_eth_conf port_conf_default = {
-    .rxmode = {.max_rx_pkt_len = RTE_ETHER_MAX_LEN}
+    .rxmode = {
+        .max_rx_pkt_len = RTE_ETHER_MAX_LEN  // OLD: removed in newer DPDK
+    }
 };
 
 int main(int argc, char **argv)
@@ -51,7 +53,9 @@ int main(int argc, char **argv)
     printf("Available ports: %u\n", nb_ports);
 
     struct rte_eth_dev_info dev_info;
-    rte_eth_dev_info_get(port_id, &dev_info);
+    if (rte_eth_dev_info_get(port_id, &dev_info))
+        rte_exit(EXIT_FAILURE, "couldn't get attribute\n");
+
     printf("using Port %u driver: %s\n", port_id, dev_info.driver_name);
 
     // 4. NUMA-aware socket

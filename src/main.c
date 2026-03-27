@@ -15,6 +15,28 @@
 
 static volatile bool force_quit = false;
 
+static int
+set_hugepages(int num) {
+    FILE *f = fopen("/proc/sys/vm/nr_hugepages", "w");
+    if (!f) {
+        perror("fopen");
+        return -1;
+    }
+
+    fprintf(f, "%d\n", num);
+    fclose(f);
+    return 0;
+}
+
+static int
+mount_hugepages(void) {
+    if (mount("nodev", "/dev/hugepages", "hugetlbfs", 0, NULL) != 0) {
+        perror("mount");
+        return -1;
+    }
+    return 0;
+}
+
 static void
 signal_handler(int signum)
 {
@@ -42,6 +64,12 @@ int main(int argc, char **argv)
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+
+    if (set_hugepages(1024))
+        rte_exit(EXIT_FAILURE, "Error with hugepage allocation\n");
+
+    if (mount_hugepages())
+        rte_exit(EXIT_FAILURE, "mounting hugepages failed\n");
 
     // 1. Initialize EAL
     ret = rte_eal_init(argc, argv);

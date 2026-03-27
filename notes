@@ -1,0 +1,9 @@
+1. set hugepages
+    sysctl -w vm.nr_hugepages=
+2. mount hugepages
+    sudo mkdir -p /mnt/huge
+    sudo mount -t hugetlbfs nodev /mnt/huge
+3. bind interface to dpdk-devbind.py
+    sudo dpdk-devbind.py -b vfio-pci 0000:03:00.0
+4. run
+    sudo ./build/app/dpdk-testpmd -l 0-3 -n 4 --huge-dir=/mnt/huge -- --portmask=0x1

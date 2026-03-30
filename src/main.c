@@ -172,6 +172,7 @@ int main(int argc, char **argv)
 
                     // CASE A: Someone is asking for OUR MAC (ARP Request)
                     if (arp->arp_opcode == rte_cpu_to_be_16(RTE_ARP_OP_REQUEST)) {
+                        printf("REQUEST\n");
                         // "Recycle" the packet: Swap MACs and IPs in place
                         // Swap Ethernet Addresses
                         rte_ether_addr_copy(&eth_hdr->src_addr, &eth_hdr->dst_addr);
@@ -195,6 +196,7 @@ int main(int argc, char **argv)
 
                     // CASE B: The Router is giving us ITS MAC (ARP Reply)
                     if (arp->arp_opcode == rte_cpu_to_be_16(RTE_ARP_OP_REPLY)) {
+                        printf("REPLY\n");
                         // Update our Shadow Table so the NAT cores can see it
                         if (arp->arp_data.arp_sip == gateway_arp.ip) {
                             rte_memcpy(gateway_arp.mac, &arp->arp_data.arp_sha, 6);

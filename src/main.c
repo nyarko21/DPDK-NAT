@@ -22,28 +22,7 @@ struct arp_cache_entry {
 } __attribute__((aligned(64)));
 
 struct arp_cache_entry gateway_arp;
-
-static inline int
-set_hugepages(int num) {
-    FILE *f = fopen("/proc/sys/vm/nr_hugepages", "w");
-    if (!f) {
-        perror("fopen");
-        return -1;
-    }
-
-    fprintf(f, "%d\n", num);
-    fclose(f);
-    return 0;
-}
-
-static inline int
-mount_hugepages(void) {
-    if (mount("nodev", "/dev/hugepages", "hugetlbfs", 0, NULL) != 0) {
-        perror("mount");
-        return -1;
-    }
-    return 0;
-}
+struct rte_ether_addr my_local_mac;
 
 static inline void
 signal_handler(int signum)
@@ -73,12 +52,6 @@ int main(int argc, char **argv)
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    if (set_hugepages(1024))
-        rte_exit(EXIT_FAILURE, "Error with hugepage allocation\n");
-
-    if (mount_hugepages())
-        rte_exit(EXIT_FAILURE, "mounting hugepages failed\n");
-
     // 1. Initialize EAL
     ret = rte_eal_init(argc, argv);
     if (ret < 0) {
@@ -98,6 +71,8 @@ int main(int argc, char **argv)
         rte_exit(EXIT_FAILURE, "couldn't get attribute\n");
 
     printf("using Port %u driver: %s\n", port_id, dev_info.driver_name);
+
+    rte_eth_macaddr_get(port_id, &my_local_mac);
 
     // 4. NUMA-aware socket
     int socket_id = rte_eth_dev_socket_id(port_id);

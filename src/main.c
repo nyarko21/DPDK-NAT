@@ -194,7 +194,7 @@ int main(int argc, char **argv)
                         printf("three?\n");
 
                         // Send it right back out the port it came from
-                        rte_eth_tx_burst(port_id, 0, &m, 1);
+                        //rte_eth_tx_burst(port_id, 0, &m, 1);
                         printf("ARP reply sent\n");
                         continue;
                     // The CPU prepares for this to be false

@@ -170,8 +170,8 @@ int main(int argc, char **argv)
                     if (arp->arp_opcode == rte_cpu_to_be_16(RTE_ARP_OP_REQUEST)) {
                         // "Recycle" the packet: Swap MACs and IPs in place
                         // Swap Ethernet Addresses
-                        rte_ether_addr_copy(&eth->src_addr, &eth->dst_addr);
-                        rte_ether_addr_copy(&my_local_mac, &eth->src_addr);
+                        rte_ether_addr_copy(&eth_hdr->src_addr, &eth_hdr->dst_addr);
+                        rte_ether_addr_copy(&my_local_mac, &eth_hdr->src_addr);
 
                         // Swap ARP Data
                         arp->arp_opcode = rte_cpu_to_be_16(RTE_ARP_OP_REPLY);

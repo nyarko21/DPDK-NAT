@@ -15,7 +15,15 @@
 
 static volatile bool force_quit = false;
 
-static int
+struct arp_cache_entry {
+    uint8_t mac[6];          // The resolved MAC (e.g., the ISP Router)
+    uint32_t ip;             // The Target IP we are looking for
+    volatile uint8_t valid;  // 1 if resolved, 0 if unknown
+} __attribute__((aligned(64)));
+
+struct arp_cache_entry gateway_arp;
+
+static inline int
 set_hugepages(int num) {
     FILE *f = fopen("/proc/sys/vm/nr_hugepages", "w");
     if (!f) {
@@ -28,7 +36,7 @@ set_hugepages(int num) {
     return 0;
 }
 
-static int
+static inline int
 mount_hugepages(void) {
     if (mount("nodev", "/dev/hugepages", "hugetlbfs", 0, NULL) != 0) {
         perror("mount");
@@ -37,7 +45,7 @@ mount_hugepages(void) {
     return 0;
 }
 
-static void
+static inline void
 signal_handler(int signum)
 {
     if (signum == SIGINT || signum == SIGTERM) {
@@ -151,12 +159,83 @@ int main(int argc, char **argv)
 
         if (nb_rx > 0) {
             printf("Received %" PRIu16 " packets\n", nb_rx);
+            int i;
+
+            for (i = 0; i < nb_rx; i++) {
+                rte_prefetch0(rte_pktmbuf_mtod(bufs[i], void *));
+
+                // future: prefetch NAT entry too
+                // If you have a huge NAT table, prefetch the hash entry too
+                // rte_prefetch0(lookup_table_entry_for_this_packet);
+            }
+
 
             for (int i = 0; i < nb_rx; i++) {
+                struct rte_mbuf *m = bufs[i];
+
+                // 2. MTOD: Get the pointer to the start of the Ethernet Header.
+                // This triggers the 64-byte fetch into one of your 512 L1 slots.
+                struct rte_ether_hdr *eth_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
+
+                uint16_t eth_type = eth_hdr->ether_type; // Already in Big Endian from wire
+
+                if (likely(eth_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4))) {
+                    struct rte_ipv4_hdr *ip_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
+                    // This is the "Straight Track" - No braking
+                    //do_nat_surgery();
+                    //rte_eth_tx_burst(WAN_PORT, 0, &m, 1);
+                    printf("IPv4 received\n");
+                    continue;
+                }
+                else if (unlikely(eth_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_ARP))) {
+
+                    struct rte_arp_hdr *arp = rte_pktmbuf_mtod_offset(m, struct rte_arp_hdr *, sizeof(struct rte_ether_hdr));
+
+                    // CASE A: Someone is asking for OUR MAC (ARP Request)
+                    if (arp->arp_opcode == rte_cpu_to_be_16(RTE_ARP_OP_REQUEST)) {
+                        // "Recycle" the packet: Swap MACs and IPs in place
+                        // Swap Ethernet Addresses
+                        rte_ether_addr_copy(&eth->src_addr, &eth->dst_addr);
+                        rte_ether_addr_copy(&my_local_mac, &eth->src_addr);
+
+                        // Swap ARP Data
+                        arp->arp_opcode = rte_cpu_to_be_16(RTE_ARP_OP_REPLY);
+                        rte_ether_addr_copy(&arp->arp_data.arp_sha, &arp->arp_data.arp_tha); // Target becomes old Sender
+                        rte_ether_addr_copy(&my_local_mac, &arp->arp_data.arp_sha);         // Sender becomes Us
+
+                        uint32_t temp_ip = arp->arp_data.arp_sip;
+                        arp->arp_data.arp_sip = arp->arp_data.arp_tip;
+                        arp->arp_data.arp_tip = temp_ip;
+
+                        // Send it right back out the port it came from
+                        rte_eth_tx_burst(port_id, 0, &m, 1);
+                        printf("ARP reply sent\n");
+                        continue;
+                    // The CPU prepares for this to be false
+                    }
+
+                    // CASE B: The Router is giving us ITS MAC (ARP Reply)
+                    if (arp->arp_opcode == rte_cpu_to_be_16(RTE_ARP_OP_REPLY)) {
+                        // Update our Shadow Table so the NAT cores can see it
+                        if (arp->arp_data.arp_sip == gateway_arp.ip) {
+                            rte_memcpy(gateway_arp.mac, &arp->arp_data.arp_sha, 6);
+                            gateway_arp.valid = 1;
+                        }
+                        rte_pktmbuf_free(m);
+                        continue;
+                    }
+                }
+                else {
+                    // The "Trash Can" for everything else
+                    rte_pktmbuf_free(m);
+                    continue;
+                }
+
+                // 4. FREE: Once done, the cache line is marked as 'dirty' or 'freeable'
+                rte_pktmbuf_free(m);
+
                 printf("  Packet length: %u bytes\n",
                        rte_pktmbuf_pkt_len(bufs[i]));
-
-                rte_pktmbuf_free(bufs[i]);
             }
         }
 
@@ -174,8 +253,6 @@ int main(int argc, char **argv)
         }
     }
 
-    // Cleanup
-    printf("Stopping port...\n");
     rte_eth_dev_stop(port_id);
     rte_eth_dev_close(port_id);
 

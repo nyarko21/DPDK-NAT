@@ -137,6 +137,7 @@ int main(int argc, char **argv)
             int i;
 
             for (i = 0; i < nb_rx; i++) {
+                printf("prefetchign\n");
                 rte_prefetch0(rte_pktmbuf_mtod(bufs[i], void *));
 
                 // future: prefetch NAT entry too
@@ -145,7 +146,8 @@ int main(int argc, char **argv)
             }
 
 
-            for (int i = 0; i < nb_rx; i++) {
+            for (i = 0; i < nb_rx; i++) {
+                printf("starting loop\n");
                 struct rte_mbuf *m = bufs[i];
 
                 // 2. MTOD: Get the pointer to the start of the Ethernet Header.
@@ -155,6 +157,7 @@ int main(int argc, char **argv)
                 uint16_t eth_type = eth_hdr->ether_type; // Already in Big Endian from wire
 
                 if (likely(eth_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4))) {
+                    printf("IP\n");
                     struct rte_ipv4_hdr *ip_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
                     // This is the "Straight Track" - No braking
                     //do_nat_surgery();
@@ -163,6 +166,7 @@ int main(int argc, char **argv)
                     continue;
                 }
                 else if (unlikely(eth_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_ARP))) {
+                    printf("ARP\n");
 
                     struct rte_arp_hdr *arp = rte_pktmbuf_mtod_offset(m, struct rte_arp_hdr *, sizeof(struct rte_ether_hdr));
 
@@ -201,6 +205,7 @@ int main(int argc, char **argv)
                     }
                 }
                 else {
+                    printf("drop\n");
                     // The "Trash Can" for everything else
                     rte_pktmbuf_free(m);
                     continue;

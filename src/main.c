@@ -175,6 +175,7 @@ int main(int argc, char **argv)
                         printf("REQUEST\n");
                         // "Recycle" the packet: Swap MACs and IPs in place
                         // Swap Ethernet Addresses
+                        printf("my_local_mac %p\n", my_local_mac);
                         rte_ether_addr_copy(&eth_hdr->src_addr, &eth_hdr->dst_addr);
                         rte_ether_addr_copy(&my_local_mac, &eth_hdr->src_addr);
 

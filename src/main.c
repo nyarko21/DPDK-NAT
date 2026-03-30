@@ -179,14 +179,19 @@ int main(int argc, char **argv)
                         rte_ether_addr_copy(&eth_hdr->src_addr, &eth_hdr->dst_addr);
                         rte_ether_addr_copy(&my_local_mac, &eth_hdr->src_addr);
 
+                        printf("one?\n");
                         // Swap ARP Data
                         arp->arp_opcode = rte_cpu_to_be_16(RTE_ARP_OP_REPLY);
                         rte_ether_addr_copy(&arp->arp_data.arp_sha, &arp->arp_data.arp_tha); // Target becomes old Sender
                         rte_ether_addr_copy(&my_local_mac, &arp->arp_data.arp_sha);         // Sender becomes Us
 
+                        printf("two?\n");
+
                         uint32_t temp_ip = arp->arp_data.arp_sip;
                         arp->arp_data.arp_sip = arp->arp_data.arp_tip;
                         arp->arp_data.arp_tip = temp_ip;
+
+                        printf("three?\n");
 
                         // Send it right back out the port it came from
                         rte_eth_tx_burst(port_id, 0, &m, 1);

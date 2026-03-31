@@ -11,7 +11,7 @@
 
 /* custom port structure for port on network */
 struct port_config {
-    uint16_t port_id;
+    int port_id;
     uint32_t gateway_ip;        /* NAT Gateway IP */
     uint32_t net_addr;          /* Network IP address on link */
     struct rte_ether_addr mac;  /* Port MAC address */
@@ -52,9 +52,9 @@ static const struct rte_eth_conf port_conf_default = {
 int main(int argc, char **argv)
 {
     int ret;
-    uint16_t port_id;
-    uint16_t socket_ids[RTE_MAX_ETHPORTS];
-    uint16_t socket_id;
+    int port_id;
+    int socket_ids[RTE_MAX_ETHPORTS];
+    int socket_id;
     uint16_t nb_ports;
     struct rte_eth_dev_info dev_info[RTE_MAX_ETHPORTS];
     struct rte_mempool *mbuf_nat_pool, *mbuf_arp_pool;
@@ -83,7 +83,7 @@ int main(int argc, char **argv)
 
     printf("Available ports: %u\n", nb_ports);
 
-    for (int port_id = 0; port_id < nb_ports; port_id++) {
+    for (port_id = 0; port_id < nb_ports; port_id++) {
 
         if (rte_eth_dev_info_get(port_id, &(dev_info[port_id])))
             rte_exit(EXIT_FAILURE, "couldn't get attribute of port %d driver %s\n", port_id, dev_info[port_id].driver_name);
@@ -324,7 +324,6 @@ create_memory_pool(const char *sig, uint16_t cnt, uint16_t cache_size,
 {
     char pool_name[32];
     struct rte_mempool *mp;
-    int ret;
 
     /* 1. Append the socket_id to the base name */
     /* Result will be "NAT_MBUF_POOL_0", "NAT_MBUF_POOL_1", etc. */
@@ -352,7 +351,7 @@ create_memory_pool(const char *sig, uint16_t cnt, uint16_t cache_size,
 }
 
 static inline int
-link_status_callback(uint16_t port_id, enum rte_eth_event_type type, void *param, void *ret_param)
+link_status_callback(int port_id, enum rte_eth_event_type type, void *param, void *ret_param)
 {
     struct rte_eth_link link;
     struct port_config *conf = (struct port_config *)param;

@@ -108,8 +108,8 @@ int main(int argc, char **argv)
         );
 
         if (mbuf_nat_pool == NULL) {
-            printf("Mempool Creation Failed: %s\n", rte_strerror(rte_errno));
-            rte_exit(EXIT_FAILURE, "Cannot create NAT mbuf pool\n");
+            printf("Mempool Creation Failed:  %s\n", rte_strerror(rte_errno));
+            rte_exit(EXIT_FAILURE, "Cannot create NAT mbuf pool on socket id %d\n", socket_id);
         }
 
         mbuf_arp_pool = create_memory_pool(

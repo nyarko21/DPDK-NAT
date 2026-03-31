@@ -300,7 +300,7 @@ int main(int argc, char **argv)
         // Print stats periodically
         uint64_t now = rte_get_timer_cycles();
         if (now - last_stat_print > rte_get_timer_hz()) {
-            rte_eth_stats_get(port_id, &stats);
+            rte_eth_stats_get(0, &stats);
 
             printf("=== NIC stats ===\n");
             printf("RX packets: %" PRIu64 "\n", stats.ipackets);
@@ -311,8 +311,8 @@ int main(int argc, char **argv)
         }
     }
 
-    rte_eth_dev_stop(port_id);
-    rte_eth_dev_close(port_id);
+    rte_eth_dev_stop(0);
+    rte_eth_dev_close(0);
 
     printf("Bye!\n");
     return 0;

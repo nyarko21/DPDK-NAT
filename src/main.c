@@ -392,11 +392,11 @@ send_announce_arp(uint16_t port_id, struct port_config *conf) {
 
     /* 2. ARP Header */
     struct rte_arp_hdr *arp_hdr = (struct rte_arp_hdr *)(eth_hdr + 1);
-    arp_hdr->arp_hrd = rte_cpu_to_be_16(RTE_ARP_HRD_ETHER);
-    arp_hdr->arp_pro = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
-    arp_hdr->arp_hln = 6;
-    arp_hdr->arp_pln = 4;
-    arp_hdr->arp_op = rte_cpu_to_be_16(RTE_ARP_OP_REPLY); // "I am..."
+    arp_hdr->arp_hardware = rte_cpu_to_be_16(RTE_ARP_HRD_ETHER);
+    arp_hdr->arp_protocol = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
+    arp_hdr->arp_hlen = 6;
+    arp_hdr->arp_plen = 4;
+    arp_hdr->arp_opcode = rte_cpu_to_be_16(RTE_ARP_OP_REPLY); // "I am..."
 
     /* Sender: My MAC / My IP */
     rte_eth_macaddr_get(port_id, &arp_hdr->arp_data.arp_sha);

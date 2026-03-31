@@ -400,9 +400,9 @@ send_announce_arp(uint16_t port_id, struct port_config *conf) {
     rte_eth_macaddr_get(port_id, &arp_hdr->arp_data.arp_sha);
     arp_hdr->arp_data.arp_sip = conf->net_addr;
 
-    /* Target: Broadcast / My IP (Gratuitous style) */
+    /* Target: Broadcast / My IP (i own it style) */
     memset(&arp_hdr->arp_data.arp_tha, 0, 6);
-    arp_hdr->arp_data.arp_tip = conf->gateway_ip;
+    arp_hdr->arp_data.arp_tip = conf->net_addr;
 
     /* 3. Set Packet Length and Send */
     m->pkt_len = m->data_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_arp_hdr);

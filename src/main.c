@@ -92,8 +92,8 @@ int main(int argc, char **argv)
             rte_exit(EXIT_FAILURE, "couldn't get mac address of port %d driver %s\n", port_id, dev_info[port_id].driver_name);
 
         socket_id = rte_eth_dev_socket_id(port_id);
-        if (socket_id == SOCKET_ID_ANY)
-            socket_id = 0;
+        //if (socket_id == SOCKET_ID_ANY)
+        //    socket_id = 0;
 
         socket_ids[port_id] = socket_id; // keep track of a port => socket id map
 

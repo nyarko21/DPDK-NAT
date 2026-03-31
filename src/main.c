@@ -248,10 +248,10 @@ int main(int argc, char **argv)
                     printf("ARP\n");
 
                     struct rte_arp_hdr *arp = rte_pktmbuf_mtod_offset(m, struct rte_arp_hdr *, sizeof(struct rte_ether_hdr));
-                    struct port_config p_conf =
+                    uint32_t target_ip = rte_be_to_cpu_32(arp->arp_data.arp_tip);
 
-                    // CASE A: Someone is asking for OUR MAC (ARP Request)
-                    if (arp->arp_opcode == rte_cpu_to_be_16(RTE_ARP_OP_REQUEST)) {
+                    // CASE A: Someone is asking for OUR MAC (ARP Request), reply if ours
+                    if (arp->arp_opcode == rte_cpu_to_be_16(RTE_ARP_OP_REQUEST) && (target_ip == net_port[0].net_addr)) {
                         printf("REQUEST\n");
                         // "Recycle" the packet: Swap MACs and IPs in place
                         // Swap Ethernet Addresses
@@ -278,18 +278,6 @@ int main(int argc, char **argv)
                         printf("ARP reply sent\n");
                         continue;
                     // The CPU prepares for this to be false
-                    }
-
-                    // CASE B: The Router is giving us ITS MAC (ARP Reply)
-                    if (arp->arp_opcode == rte_cpu_to_be_16(RTE_ARP_OP_REPLY)) {
-                        printf("REPLY\n");
-                        // Update our Shadow Table so the NAT cores can see it
-                        if (arp->arp_data.arp_sip == gateway_arp.ip) {
-                            rte_memcpy(gateway_arp.mac, &arp->arp_data.arp_sha, 6);
-                            gateway_arp.valid = 1;
-                        }
-                        rte_pktmbuf_free(m);
-                        continue;
                     }
                 }
                 else {

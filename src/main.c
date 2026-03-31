@@ -11,7 +11,7 @@
 
 /* custom port structure for port on network */
 struct port_config {
-    int port_id;
+    uint16_t port_id;
     uint32_t gateway_ip;        /* NAT Gateway IP */
     uint32_t net_addr;          /* Network IP address on link */
     struct rte_ether_addr mac;  /* Port MAC address */
@@ -20,7 +20,7 @@ struct port_config {
     int socket_id;              /* NUMA Socket ID */
 };
 
-static inline int link_status_callback(int, enum rte_eth_event_type, void *, void *);
+static inline int link_status_callback(uint16_t, enum rte_eth_event_type, void *, void *);
 static inline void signal_handler(int);
 struct rte_mempool * create_memory_pool(const char *, uint16_t, uint16_t,
         uint16_t, uint16_t, int);
@@ -52,7 +52,7 @@ static const struct rte_eth_conf port_conf_default = {
 int main(int argc, char **argv)
 {
     int ret;
-    int port_id;
+    uint16_t port_id;
     int socket_ids[RTE_MAX_ETHPORTS];
     int socket_id;
     uint16_t nb_ports;
@@ -92,8 +92,8 @@ int main(int argc, char **argv)
             rte_exit(EXIT_FAILURE, "couldn't get mac address of port %d driver %s\n", port_id, dev_info[port_id].driver_name);
 
         socket_id = rte_eth_dev_socket_id(port_id);
-        //if (socket_id == SOCKET_ID_ANY)
-        //    socket_id = 0;
+        if (socket_id == SOCKET_ID_ANY)
+            socket_id = 0;
 
         socket_ids[port_id] = socket_id; // keep track of a port => socket id map
 
@@ -351,7 +351,7 @@ create_memory_pool(const char *sig, uint16_t cnt, uint16_t cache_size,
 }
 
 static inline int
-link_status_callback(int port_id, enum rte_eth_event_type type, void *param, void *ret_param)
+link_status_callback(uint16_t port_id, enum rte_eth_event_type type, void *param, void *ret_param)
 {
     struct rte_eth_link link;
     struct port_config *conf = (struct port_config *)param;

@@ -257,15 +257,14 @@ int main(int argc, char **argv)
                         printf("REQUEST\n");
                         // "Recycle" the packet: Swap MACs and IPs in place
                         // Swap Ethernet Addresses
-                        printf("my_local_mac %p\n", my_local_mac);
                         rte_ether_addr_copy(&eth_hdr->src_addr, &eth_hdr->dst_addr);
-                        rte_ether_addr_copy(&my_local_mac, &eth_hdr->src_addr);
+                        rte_ether_addr_copy(&my_local_mac[0], &eth_hdr->src_addr);
 
                         printf("one?\n");
                         // Swap ARP Data
                         arp->arp_opcode = rte_cpu_to_be_16(RTE_ARP_OP_REPLY);
                         rte_ether_addr_copy(&arp->arp_data.arp_sha, &arp->arp_data.arp_tha); // Target becomes old Sender
-                        rte_ether_addr_copy(&my_local_mac, &arp->arp_data.arp_sha);         // Sender becomes Us
+                        rte_ether_addr_copy(&my_local_mac[0], &arp->arp_data.arp_sha);         // Sender becomes Us
 
                         printf("two?\n");
 

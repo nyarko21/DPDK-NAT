@@ -125,7 +125,7 @@ int main(int argc, char **argv)
             rte_exit(EXIT_FAILURE, "Cannot create ARP mbuf pool\n");
         }
 
-        ret = rte_eth_dev_configure(port_id, 2, 2, &port_conf);
+        ret = rte_eth_dev_configure(port_id, 1, 1, &port_conf);
         if (ret < 0) {
             rte_exit(EXIT_FAILURE, "Cannot configure device on port %d\n", port_id);
         }
@@ -144,7 +144,7 @@ int main(int argc, char **argv)
         }
 
         // setup RX queue for ARP
-        ret = rte_eth_rx_queue_setup(
+        /*ret = rte_eth_rx_queue_setup(
             port_id,
             1,
             RX_ARP_RING_SIZE,
@@ -154,7 +154,7 @@ int main(int argc, char **argv)
         );
         if (ret < 0) {
             rte_exit(EXIT_FAILURE, "ARP RX queue setup failed\n");
-        }
+        }*/
 
         /* setup TX queue */
         txq_conf = dev_info[port_id].default_txconf;
@@ -173,7 +173,7 @@ int main(int argc, char **argv)
         }
 
         // ARP
-        ret = rte_eth_tx_queue_setup(
+        /*ret = rte_eth_tx_queue_setup(
             port_id,
             1,           // Queue index 0
             TX_ARP_RING_SIZE,
@@ -182,7 +182,7 @@ int main(int argc, char **argv)
         );
         if (ret < 0) {
             rte_exit(EXIT_FAILURE, "ARP TX queue setup failed: err=%d, port=%u\n", ret, port_id);
-        }
+        }*/
 
         net_port[port_id].port_id = port_id;
         net_port[port_id].gateway_ip = rte_cpu_to_be_32(RTE_IPV4(192, 168, 100, 1));
@@ -382,6 +382,8 @@ send_announce_arp(uint16_t port_id, struct port_config *conf) {
     struct rte_mbuf *m = rte_pktmbuf_alloc(conf->arp_pool);
     if (!m) return;
 
+    printf("announcing..\n");
+
     /* 1. Ethernet Header */
     struct rte_ether_hdr *eth_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
     rte_eth_macaddr_get(port_id, &eth_hdr->src_addr);
@@ -390,11 +392,11 @@ send_announce_arp(uint16_t port_id, struct port_config *conf) {
 
     /* 2. ARP Header */
     struct rte_arp_hdr *arp_hdr = (struct rte_arp_hdr *)(eth_hdr + 1);
-    arp_hdr->arp_hardware = rte_cpu_to_be_16(RTE_ARP_HRD_ETHER);
-    arp_hdr->arp_protocol = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
-    arp_hdr->arp_hlen = 6;
-    arp_hdr->arp_plen = 4;
-    arp_hdr->arp_opcode = rte_cpu_to_be_16(RTE_ARP_OP_REPLY); // "I am..."
+    arp_hdr->arp_hrd = rte_cpu_to_be_16(RTE_ARP_HRD_ETHER);
+    arp_hdr->arp_pro = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
+    arp_hdr->arp_hln = 6;
+    arp_hdr->arp_pln = 4;
+    arp_hdr->arp_op = rte_cpu_to_be_16(RTE_ARP_OP_REPLY); // "I am..."
 
     /* Sender: My MAC / My IP */
     rte_eth_macaddr_get(port_id, &arp_hdr->arp_data.arp_sha);
@@ -406,7 +408,7 @@ send_announce_arp(uint16_t port_id, struct port_config *conf) {
 
     /* 3. Set Packet Length and Send */
     m->pkt_len = m->data_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_arp_hdr);
-    rte_eth_tx_burst(port_id, 1, &m, 1);
+    rte_eth_tx_burst(port_id, 0, &m, 1);
 }
 
 static inline void

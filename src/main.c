@@ -20,7 +20,7 @@ struct port_config {
     int socket_id;              /* NUMA Socket ID */
 };
 
-static inline int link_status_callback(uint16_t, enum rte_eth_event_type, void *, void *);
+//static inline int link_status_callback(uint16_t, enum rte_eth_event_type, void *, void *);
 static inline void signal_handler(int);
 struct rte_mempool * create_memory_pool(const char *, uint16_t, uint16_t,
         uint16_t, uint16_t, int);
@@ -64,6 +64,8 @@ int main(int argc, char **argv)
     struct rte_eth_stats stats;
     uint64_t last_stat_print = 0;
     struct port_config net_port[RTE_MAX_ETHPORTS];
+    struct rte_eth_link link;
+    int announced = 0;
 
 
     signal(SIGINT, signal_handler);
@@ -192,9 +194,9 @@ int main(int argc, char **argv)
         net_port[port_id].nat_pool = mbuf_nat_pool;
         net_port[port_id].socket_id = socket_id;
 
-        ret = rte_eth_dev_callback_register(port_id, RTE_ETH_EVENT_INTR_LSC, link_status_callback, &net_port[port_id]);
-        if (ret < 0)
-            rte_exit(EXIT_FAILURE, "callback registering failed: err=%d, port=%u\n", ret, port_id);
+        //ret = rte_eth_dev_callback_register(port_id, RTE_ETH_EVENT_INTR_LSC, link_status_callback, &net_port[port_id]);
+        //if (ret < 0)
+        //    rte_exit(EXIT_FAILURE, "callback registering failed: err=%d, port=%u\n", ret, port_id);
 
         ret = rte_eth_dev_start(port_id);
         if (ret < 0) {
@@ -212,6 +214,28 @@ int main(int argc, char **argv)
     printf("Initialization complete. Receiving packets...\n");
 
     while (!force_quit) {
+        if (!announced) {
+            ret = rte_eth_link_get_nowait(port_id, &link);
+            if (ret < 0) {
+                rte_exit(EXIT_FAILURE, "Port %u: Failed to get link (error %d)\n", port_id, ret);
+            }
+
+            if (link.link_status == RTE_ETH_LINK_UP) {
+                printf("Port %u Link Up - speed %u Mbps - %s\n",
+                port_id, link.link_speed,
+                (link.link_duplex == RTE_ETH_LINK_FULL_DUPLEX) ? "full-duplex" : "half-duplex");
+
+                /* send ARPs to announce presence */
+                for (int i = 0;  i < 3; i++)
+                    send_announce_arp(port_id, conf);
+                    announced = 1;
+            } else {
+                printf("Port %u Link Down\n", port_id);
+                continue;
+            }
+        }
+
+
         uint16_t nb_rx = rte_eth_rx_burst(0, 0, bufs, BURST_SIZE);
 
         if (nb_rx > 0) {
@@ -350,14 +374,13 @@ create_memory_pool(const char *sig, uint16_t cnt, uint16_t cache_size,
     return mp;
 }
 
-static inline int
+/*static inline int
 link_status_callback(uint16_t port_id, enum rte_eth_event_type type, void *param, void *ret_param)
 {
     struct rte_eth_link link;
     struct port_config *conf = (struct port_config *)param;
     int ret;
 
-    /* Check the link state without blocking the interrupt thread */
     ret = rte_eth_link_get_nowait(port_id, &link);
     if (ret < 0) {
         printf("Port %u: Failed to get link (error %d)\n", port_id, ret);
@@ -369,13 +392,13 @@ link_status_callback(uint16_t port_id, enum rte_eth_event_type type, void *param
                port_id, link.link_speed,
                (link.link_duplex == RTE_ETH_LINK_FULL_DUPLEX) ? "full-duplex" : "half-duplex");
 
-        /* send ARPs to announce presence */
         send_announce_arp(port_id, conf);
     } else {
         printf("Port %u Link Down\n", port_id);
     }
     return 0;
 }
+*/
 
 static inline void
 send_announce_arp(uint16_t port_id, struct port_config *conf) {

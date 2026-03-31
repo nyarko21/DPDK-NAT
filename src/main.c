@@ -20,7 +20,7 @@ struct port_config {
     int socket_id;              /* NUMA Socket ID */
 };
 
-static inline int link_status_callback(uint16_t, enum rte_eth_event_type, void *, void *);
+static inline int link_status_callback(int, enum rte_eth_event_type, void *, void *);
 static inline void signal_handler(int);
 struct rte_mempool * create_memory_pool(const char *, uint16_t, uint16_t,
         uint16_t, uint16_t, int);

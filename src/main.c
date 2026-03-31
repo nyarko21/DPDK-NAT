@@ -55,7 +55,7 @@ int main(int argc, char **argv)
     uint16_t port_id;
     uint16_t socket_ids[RTE_MAX_ETHPORTS];
     uint16_t socket_id;
-    uint16_t nb_ports[RTE_MAX_ETHPORTS];
+    uint16_t nb_ports;
     struct rte_eth_dev_info dev_info[RTE_MAX_ETHPORTS];
     struct rte_mempool *mbuf_nat_pool, *mbuf_arp_pool;
     struct rte_eth_txconf txq_conf;
@@ -86,10 +86,10 @@ int main(int argc, char **argv)
     for (int port_id = 0; port_id < nb_ports; port_id++) {
 
         if (rte_eth_dev_info_get(port_id, &(dev_info[port_id])))
-            rte_exit(EXIT_FAILURE, "couldn't get attribute of port %d driver %s\n", port_id, dev_info[i].driver_name);
+            rte_exit(EXIT_FAILURE, "couldn't get attribute of port %d driver %s\n", port_id, dev_info[port_id].driver_name);
 
         if (rte_eth_macaddr_get(port_id, &(my_local_mac[port_id])))
-            rte_exit(EXIT_FAILURE, "couldn't get mac address of port %d driver %s\n", port_id, dev_info[i].driver_name);
+            rte_exit(EXIT_FAILURE, "couldn't get mac address of port %d driver %s\n", port_id, dev_info[port_id].driver_name);
 
         socket_id = rte_eth_dev_socket_id(port_id);
         if (socket_id == SOCKET_ID_ANY)

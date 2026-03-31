@@ -191,7 +191,7 @@ int main(int argc, char **argv)
         net_port[port_id].nat_pool = mbuf_nat_pool;
         net_port[port_id].socket_id = socket_id;
 
-        ret = rte_eth_dev_callback_register(port_id, RTE_ETH_EVENT_INTR_LSC, link_status_callback, &net_port[i]);
+        ret = rte_eth_dev_callback_register(port_id, RTE_ETH_EVENT_INTR_LSC, link_status_callback, &net_port[port_id]);
         if (ret < 0)
             rte_exit(EXIT_FAILURE, "callback registering failed: err=%d, port=%u\n", ret, port_id);
 

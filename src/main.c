@@ -9,11 +9,22 @@
 #include <rte_mbuf.h>
 #include "local.h"
 
+/* custom port structure for port on network */
+struct port_config {
+    uint16_t port_id;
+    uint32_t gateway_ip;        /* NAT Gateway IP */
+    uint32_t net_addr;          /* Network IP address on link */
+    struct rte_ether_addr mac;  /* Port MAC address */
+    struct rte_mempool *arp_pool;   /* Socket-local arp memory pool */
+    struct rte_mempool *nat_pool;   /* socket-local NAT memory pool */
+    int socket_id;              /* NUMA Socket ID */
+};
+
 static inline int link_status_callback(uint16_t, enum rte_eth_event_type, void *, void *);
 static inline void signal_handler(int);
 struct rte_mempool * create_memory_pool(const char *, uint16_t, uint16_t,
         uint16_t, uint16_t, int);
-static inline void send_gratuitous_arp(uint16_t, struct port_config *);
+static inline void send_announce_arp(uint16_t, struct port_config *);
 
 static const struct rte_eth_conf port_conf_default = {
     .rxmode = {
@@ -36,16 +47,7 @@ static const struct rte_eth_conf port_conf_default = {
     },
 };
 
-/* custom port structure for port on network */
-struct port_config {
-    uint16_t port_id;
-    uint32_t gateway_ip;        /* NAT Gateway IP */
-    uint32_t net_addr;          /* Network IP address on link */
-    struct rte_ether_addr mac;  /* Port MAC address */
-    struct rte_mempool *arp_pool;   /* Socket-local arp memory pool */
-    struct rte_mempool *nat_pool;   /* socket-local NAT memory pool */
-    int socket_id;              /* NUMA Socket ID */
-};
+
 
 int main(int argc, char **argv)
 {
@@ -369,7 +371,7 @@ link_status_callback(uint16_t port_id, enum rte_eth_event_type type, void *param
                (link.link_duplex == RTE_ETH_LINK_FULL_DUPLEX) ? "full-duplex" : "half-duplex");
 
         /* send ARPs to announce presence */
-        send_gratuitous_arp(port_id, conf);
+        send_announce_arp(port_id, conf);
     } else {
         printf("Port %u Link Down\n", port_id);
     }
@@ -377,7 +379,7 @@ link_status_callback(uint16_t port_id, enum rte_eth_event_type type, void *param
 }
 
 static inline void
-send_gratuitous_arp(uint16_t port_id, struct port_config *conf) {
+send_announce_arp(uint16_t port_id, struct port_config *conf) {
     struct rte_mbuf *m = rte_pktmbuf_alloc(conf->arp_pool);
     if (!m) return;
 

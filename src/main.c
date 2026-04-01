@@ -217,8 +217,8 @@ int main(int argc, char **argv)
     printf("Initialization complete. Receiving packets...\n");
 
     while (!force_quit) {
-        /*if (!announced) {
-            ret = rte_eth_link_get_nowait(0, &link);
+        if (!announced) {
+            ret = rte_eth_link_get(0, &link);
             if (ret < 0) {
                 rte_exit(EXIT_FAILURE, "Port %u: Failed to get link (error %d)\n", 0, ret);
             }
@@ -229,26 +229,26 @@ int main(int argc, char **argv)
                 (link.link_duplex == RTE_ETH_LINK_FULL_DUPLEX) ? "full-duplex" : "half-duplex");
 
                 /* send ARPs to announce presence */
-                /*for (int i = 0;  i < 3; i++)
+                for (int i = 0;  i < 3; i++)
                     send_announce_arp(0, &net_port[0]);
                     announced = 1;
             } else {
                 printf("Port %u Link Down\n", 0);
                 continue;
             }
-        }*/
+        }
 
 
         uint16_t nb_rx = rte_eth_rx_burst(0, 0, bufs, BURST_SIZE);
 
         if (nb_rx > 0) {
 
-            if (!announced) {
+            /*if (!announced) {
                 for (int i = 0;  i < 3; i++) {
                     send_announce_arp(0, &net_port[0]);
                 }
                  announced = 1;
-            }
+            }*/
             printf("Received %" PRIu16 " packets\n", nb_rx);
             int i;
 

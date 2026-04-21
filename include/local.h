@@ -6,20 +6,85 @@
 #define MBUF_CACHE_SIZE 256
 #define BURST_SIZE 32
 
-/* ARP/Management Pool Constants */
-#define NUM_MBUFS_ARP          1023    /* Sufficient for control plane bursts */
-#define MBUF_CACHE_SIZE_ARP    32      /* Small cache for a single service core */
-#define ARP_MBUF_DATA_SIZE     512     /* ARP packets are ~64 bytes; no need for 2KB */
+#define LOG_MBUFS 8191
+#define LOG_MBUF_CACHE_SIZE 256
 
-struct arp_cache_entry {
-    uint8_t mac[6];          // The resolved MAC (e.g., the ISP Router)
-    uint32_t ip;             // The Target IP we are looking for
-    volatile uint8_t valid;  // 1 if resolved, 0 if unknown
-} __attribute__((aligned(64)));
+#define AUDIT_RING_SIZE 65536
+
+
+#define TLS_HANDSHAKE 22
+
+
+#define MYSQL_MARIADB 3306
+
+#define POSTGRESQL 5432
+
+#define MSSQL 1433
+
+#define ORACLE 1521
+
+#define MONGODB 27017
+
+#define REDIS 6379
+
+
+typedef ip_addr_t uint32_t;
 
 
 static volatile bool force_quit = false;
-static volatile uint8_t port_needs_arp_announcement[RTE_MAX_ETHPORTS] = {0};
 
-static struct arp_cache_entry gateway_arp;
+#define MAX_IP_ENTRIES 65536
+
+struct ip_stats {
+    uint64_t syn;      // SYN packets seen
+    uint64_t syn_ack;   // SYN-ACK acknowledgments
+    uint64_t ack;      // ACK packets seen
+    uint64_t rst;      // optional: TCP resets
+    uint64_t fin;       // FIN packets
+
+    uint64_t udp;       // udp packets
+    uint64_t icmp;      // icmp
+
+    uint64_t bytes;     // bytes
+} __attribute__((aligned(64)));
+
+struct ip_entry {
+    ip_addr_t ip;
+    struct ip_stats stats;
+    uint64_t window_start_tsc;
+    uint16_t count;
+};
+
+struct ip_entry entries[MAX_IP_ENTRIES];
+struct rte_hash *ip_hash;
+
 static struct rte_ether_addr my_local_mac[RTE_MAX_ETHPORTS];
+
+/* custom port structure for port on network */
+struct port_config {
+    struct rte_ether_addr mac;  /* Port MAC address */
+    struct rte_mempool *arp_pool;   /* Socket-local arp memory pool */
+    struct rte_mempool *nat_pool;   /* socket-local NAT memory pool */
+    uint32_t gateway_ip;        /* NAT Gateway IP */
+    uint32_t net_addr;          /* Network IP address on link */
+    uint16_t port_id;
+    int socket_id;              /* NUMA Socket ID */
+} __attribute__((packed));
+
+//static inline int link_status_callback(uint16_t, enum rte_eth_event_type, void *, void *);
+static inline void signal_handler(int);
+struct rte_mempool * create_memory_pool(const char *, uint16_t, uint16_t,
+        uint16_t, uint16_t, int);
+static inline const char *
+extract_sni(const uint8_t *, size_t);
+static inline int audit_consumer(void *arg);
+static inline const char* port_to_service(uint16_t);
+static inline const char* protocol_to_str(uint8_t);
+
+static inline int load_ipv4_cidrs(struct rte_lpm *, const char *);
+static inline int load_ipv6_cidrs(struct rte_lpm6 *, const char *);
+static inline const char *map_file(const char*);
+static inline struct ip_entry *lookup_ip(uint32_t);
+static inline struct ip_entry *create_ip_entry(uint32_t);
+
+static inline bool  is_allowed_udp_port(uint16_t) ;

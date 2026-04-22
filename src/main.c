@@ -872,10 +872,12 @@ check_udp_payload_encryption(const uint8_t *payload, uint16_t len, struct sovere
     // DTLS Version 1.2 is 0xfe fd
     if (payload[0] == 0x16 && payload[1] == 0xfe) {
         entry->is_tls_ech_handshake = true;
+        return;
     }
 
     if (payload[0] == 0x17 && payload[1] == 0xfe) {
         entry->is_data_encrypted = true;
+        return;
     }
 
     // 2. QUIC Check

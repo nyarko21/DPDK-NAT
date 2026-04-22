@@ -31,14 +31,17 @@ struct rte_hash_parameters hash_params = {
 struct sovereignty_log {
     char src_ip[INET_ADDRSTRLEN];
     char dst_ip[INET_ADDRSTRLEN];
-    const char* sni;
+    char sni[256];
     const char *service;
     const char *protocol;
+    uint32_t s_ip;
+    uint32_t d_ip;
     uint64_t timestamp;
     uint32_t bytes;
     uint16_t dst_port;
     uint16_t src_port;
-    uint8_t direction;
+    bool is_data_encrypted;
+    bool is_tls_ech_handshake;
 };
 
 struct sovereignty_audit_entry {
@@ -46,6 +49,16 @@ struct sovereignty_audit_entry {
     uint64_t total_bytes;   // Total volume for this session/packet
     char org_name[64];      // Identity (from your Top 1000/rDNS table)
     uint64_t timestamp;
+};
+
+struct audit_ctx {
+    struct rte_ring *audit_ring;
+    struct rte_mempool *log_pool;
+    uint64_t start_cycles;
+    time_t start_time;
+    uint64_t hz;
+    uint64_t timestamp;
+    const char *output_file;
 };
 
 ip_hash = rte_hash_create(&hash_params);
@@ -103,14 +116,17 @@ int main(int argc, char **argv)
     uint64_t last_stat_print = 0;
     struct port_config net_port[RTE_MAX_ETHPORTS];
     struct rte_eth_link link;
-    struct sovereignty_log *entry;
+    struct sovereignty_log *entry = malloc(sizeof(*entry));
     uint64_t clock_rate = rte_get_tsc_hz();
     struct rte_lpm *lpmv4, lpmv6;
     struct rte_ring *audit_ring;
+    struct audit_ctx *ctx = malloc(sizeof(*ctx));
+    ctx->start_cycles = rte_rdtsc();
+    ctx->start_time = time(NULL);
+    ctx->hz = rte_get_timer_hz();
 
     const char *v4filename = "afrinic-gh-ipv4-cidr.txt";
     const char *v6filename = "afrinic-gh-ipv6-cidr.txt";
-
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -225,6 +241,9 @@ int main(int argc, char **argv)
         if (audit_ring == NULL) {
             rte_exit(EXIT_FAILURE, "Failed to create Audit Ring: %s\n", rte_strerror(rte_errno));
         }
+        ctx->audit_ring = audit_ring;
+        ctx->log_pool = log_pool;
+        rte_eal_remote_launch(audit_consumer, ctx, 1);
 
     }
 
@@ -238,6 +257,8 @@ int main(int argc, char **argv)
 
         if (nb_rx == 0)
             continue;
+
+        entry->timestamp = now;
 
         printf("Received %" PRIu16 " packets\n", nb_rx);
         int i;
@@ -264,6 +285,7 @@ int main(int argc, char **argv)
             struct rte_tcp_hdr   *tcp;
             struct rte_udp_hdr   *udp;
             uint32_t next_hop;
+            char *sniptr;
 
 
             uint16_t eth_type = eth_hdr->ether_type; // Already in Big Endian from wire
@@ -283,6 +305,8 @@ int main(int argc, char **argv)
                     continue;
                 }
 
+                memset(entry, 0, sizeof(*entry));
+
                 /* not ghana IP, flagged */
 
 
@@ -294,24 +318,42 @@ int main(int argc, char **argv)
                     d_port = rte_cpu_to_be_16(tcp->dst_port);
                     s_port = rte_cpu_to_be_16(tcp->src_port);
                     const uint8_t *data = (uint8_t *)tcp + ((tcp->data_off >> 4) * 4);
-                    size_t tcp_payload_len = rte_be_to_cpu_16(ipv4->total_length)
+                    uint16_t tcp_payload_len = rte_be_to_cpu_16(ipv4->total_length)
                         - ((ipv4->ihl * 4) + ((tcp->data_off >> 4) * 4));
-
-                    //const char *sni = extract_sni(data, tcp_payload_len);
+                    size_t sni_len;
+                    check_tcp_payload_encryption(data, tcp_payload_len, entry);
+                    if (entry->is_tls_ech_handshake) {
+                        static const char *unk = "ECH ENCRYPTED";
+                        rte_memcpy(entry->sni, unk, 14);
+                    }
+                    else {
+                        if ((sniptr = extract_sni(data, tcp_payload_len, &sni_len)) != NULL) {
+                            rte_memcpy(entry->sni, sniptr, sni_len);
+                            entry->sni[sni_len] = '\0';
+                        }
+                        else {
+                            static const char *unk = "UNKNOWN";
+                            rte_memcpy(entry->sni, unk, 8);
+                        }
+                    }
 
                 } else if (proto == IPPROTO_UDP) {
                     udp = (struct rte_udp_hdr *)((unsigned char *)ipv4 +
                     (ipv4->ihl * 4));
+                    unsigned char *payload = (unsigned char *)(udp + 1);
+                    uint16_t payload_len = rte_be_to_cpu_16(ipv4->total_length) - (ipv4->ihl * 4) - sizeof(struct rte_udp_hdr);
                     d_port = rte_cpu_to_be_16(udp->dst_port);
                     s_port = rte_cpu_to_be_16(udp->src_port);
+                    check_udp_payload_encryption(payload, payload_len, entry);
+                    if (entry->is_tls_ech_handshake) {
+                        static const char *unk = "ECH ENCRYPTED";
+                        rte_memcpy(entry->sni, unk, 14);
+                    }
                 }
 
-                get_entry(dst_ip, now, clock_rate);
-
-
                 if (rte_mempool_get(log_pool, (void **)&entry) == 0) {
-                    inet_ntop(AF_INET, &src_ip, entry->src_ip, INET_ADDRSTRLEN);
-                    inet_ntop(AF_INET, &dst_ip, entry->dst_ip, INET_ADDRSTRLEN);
+                    entry->d_ip = dst_ip;
+                    entry->s_ip = src_ip;
                     entry->src_port = s_port;
                     entry->dst_port = d_port;
                     entry->timestamp = now; // High-precision cycle count
@@ -323,7 +365,6 @@ int main(int argc, char **argv)
                     if (rte_ring_enqueue(audit_ring, entry) < 0) {
                         rte_mempool_put(log_pool, entry); // Drop if ring is full
                     }
-                    rte_eal_remote_launch(audit_consumer, audit_ring, 1);
                 }
 
                 printf("IPv4 received\n");
@@ -417,7 +458,7 @@ signal_handler(int signum)
 #define TLS_EXT_SNI 0x0000
 
 static inline const char *
-extract_sni(const uint8_t *data, size_t len)
+extract_sni(const uint8_t *data, size_t len, size_t *sni_len)
 {
     const uint8_t *p = data;
     const uint8_t *end = data + len;
@@ -511,6 +552,8 @@ extract_sni(const uint8_t *data, size_t len)
 
             if (sni + name_len > p + ext_size)
                 return NULL;
+
+            *sni_len = strlen(sni);
 
             return (const char *)sni; // NOT null-terminated!
         }
@@ -626,21 +669,31 @@ load_ipv6_cidrs(struct rte_lpm6 *lpm6, const char *filename)
 }
 
 static inline int
-audit_consumer(struct rte_mempool *log_pool, void *arg)
+audit_consumer(void *arg)
 {
-    struct rte_ring *ring = arg;
+    struct audit_ctx *ctx = arg;
     struct sovereignty_log *entries[BURST_SIZE];
+
+    uint64_t start_cycles = ctx->start_cycles;
+    time_t start_time = ctx->start_time;
+    uint64_t hz = ctx->hz;
 
     // Bank of Ghana requires restricted access to audit trails
     // 0600: Only the application owner can read/write.
-    int fd = open("audit.log", O_WRONLY | O_APPEND | O_CREAT, 0600);
+    int fd = open("audit.csv", O_WRONLY | O_APPEND | O_CREAT, 0600);
 
     if (fd < 0) {
         rte_exit(EXIT_FAILURE, "CRITICAL: Audit log inaccessible. System must halt.\n");
     }
+    if (lseek(fd, 0, SEEK_END) == 0) {
+        const char *header = "Time,Source (Bank),Destination,Service,SNI state, protocol\n";
+        write(fd, header, strlen(header));
+    }
 
     while (1) {
-        unsigned int n = rte_ring_dequeue_burst(ring, (void **)entries, BURST_SIZE, NULL);
+
+        // Inside your audit_consumer loop
+        unsigned int n = rte_ring_dequeue_burst(ctx->audit_ring, (void **)entries, BURST_SIZE, NULL);
 
         if (unlikely(n == 0)) {
             rte_pause();
@@ -650,21 +703,33 @@ audit_consumer(struct rte_mempool *log_pool, void *arg)
         for (unsigned int i = 0; i < n; i++) {
             char buf[1024];
             struct sovereignty_log *entry = entries[i];
+            char s_ip_str[INET_ADDRSTRLEN];
+            char d_ip_str[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &entry->s_ip, s_ip_str, INET_ADDRSTRLEN);
+            inet_ntop(AF_INET, &entry->d_ip, d_ip_str, INET_ADDRSTRLEN);
 
-            // Added 'GH' prefix for local identification and strict timestamping
+            // 2. Format Timestamp to HH:MM:SS
+            time_t pkt_time = start_time + ((entry->timestamp - start_cycles) / hz);
+            struct tm *tm_info = localtime(&pkt_time);
+            char time_str[9];
+            strftime(time_str, sizeof(time_str), "%H:%M:%S", tm_info);
+
+            // 3. Generate CSV Row
             int len = snprintf(buf, sizeof(buf),
-                "LOC=GH REG=BOG TS=%lu SRC=%s DST=%s SP=%u DP=%u SNI=%s Service=%s protocol=%s\n",
-                entry->timestamp, entry->src_ip, entry->dst_ip,
-                rte_be_to_cpu_16(entry->src_port), rte_be_to_cpu_16(entry->dst_port),
-                entry->sni ? entry->sni : "NULL",
-                entry->service, entry->protocol);
+                "%s,%s,%s,%s,%s,%s\n",
+                time_str,             // Time
+                s_ip_str,          // Source (Bank)
+                d_ip_str,    // Destination (SNI or IP)
+                entry->service,         // Service (SWIFT/GIP/Update)
+                entry->sni,             // SNI
+                entry->protocol);       // protocol
 
-            if (write(fd, buf, len) < 0) {
+            if (unlikely(write(fd, buf, len) < 0)) {
                 // Fintechs must "Fail-Closed" if logging fails
                 rte_exit(EXIT_FAILURE, "Storage Failure: Ghana Cyber Act Compliance Breach.\n");
             }
 
-            rte_mempool_put(log_pool, entry);
+            rte_mempool_put(ctx->log_pool, entry);
         }
 
         // Immediate consistency for financial records
@@ -759,4 +824,80 @@ get_entry(uint32_t dst_ip, uint64_t now, uint64_t cyc)
         entry->window_start_tsc = now;
     }
     return entry;
+}
+
+static inline void
+check_tcp_payload_encryption(const uint8_t *payload, uint16_t len, struct sovereignty_log *entry)
+{
+    if (len < 16) return 0; // Too small to reliably judge
+
+    // 1. Protocol-Level Check: TLS Application Data
+    // 0x17 is the ContentType for "Application Data" in TLS 1.2 and 1.3
+    if (payload[0] == 0x17 && payload[1] == 0x03) {
+        entry->is_data_encrypted = true;
+        return;
+    }
+
+    if(payload[0] == 0x16 && payload[1] == 0x03) {
+        entry->is_tls_ech_handshake = true;
+        return;
+    }
+
+    // 2. Statistical Heuristic (The "Randomness" Test)
+    // We sample 4 specific offsets to see if they fall into common ASCII ranges.
+    // If they look like "GET ", "POST", or "HTTP", it's plaintext.
+    int non_ascii_count = 0;
+    uint16_t samples[4] = { len/4, len/2, (3*len)/4, len-1 };
+
+    for (int i = 0; i < 4; i++) {
+        uint8_t b = payload[samples[i]];
+        // If byte is outside standard printable ASCII (32-126)
+        // or common whitespace, it's likely part of an encrypted stream.
+        if (b < 32 || b > 126) {
+            non_ascii_count++;
+        }
+    }
+
+    // If 3 out of 4 samples are non-printable, we treat it as encrypted
+    entry->is_encrypted = (non_ascii_count >= 3);
+}
+
+/**
+ * Returns 1 if the UDP payload is likely encrypted (DTLS or QUIC),
+ * 0 if it appears to be plaintext (DNS, NTP, etc.)
+ */
+static inline void
+check_udp_payload_encryption(const uint8_t *payload, uint16_t len, struct sovereignty_log *entry)
+{
+    if (len < 8)
+        return;
+
+    // 1. DTLS Check
+    // DTLS uses the same ContentTypes as TLS.
+    // 0x16 = Handshake, 0x17 = Application Data
+    // DTLS Version 1.2 is 0xfe fd
+    if (payload[0] == 0x16 && payload[1] == 0xfe) {
+        entry->is_tls_ech_handshake = true;
+    }
+
+    if (payload[0] == 0x17 && payload[1] == 0xfe) {
+        entry->is_data_encrypted = true;
+    }
+
+    // 2. QUIC Check
+    // QUIC Long Header starts with 0x80 or higher (bit 7 set)
+    // QUIC Short Header (1-RTT) has bit 6 set and bit 7 unset (0x40-0x7f)
+    // This is a common heuristic for HTTP/3 traffic
+    if ((payload[0] & 0x80) || (payload[0] & 0x40)) {
+        // Statistical check: Since QUIC is fully encrypted (even headers),
+        // the entropy will be very high.
+        int non_ascii = 0;
+        for(int i = 1; i < 5; i++) {
+            if (payload[i] < 32 || payload[i] > 126) non_ascii++;
+        }
+        if (non_ascii >= 3)
+            entry->is_data_encrypted = true;
+    }
+
+    return;// Likely Plaintext (e.g., DNS)
 }

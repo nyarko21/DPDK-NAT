@@ -13,6 +13,7 @@
 
 
 #define TLS_HANDSHAKE 22
+#define TLS_EXT_ECH 0xfe0d
 
 
 #define MYSQL_MARIADB 3306
@@ -76,10 +77,12 @@ static inline void signal_handler(int);
 struct rte_mempool * create_memory_pool(const char *, uint16_t, uint16_t,
         uint16_t, uint16_t, int);
 static inline const char *
-extract_sni(const uint8_t *, size_t);
+extract_sni(const uint8_t *, size_t, size_t);
 static inline int audit_consumer(void *arg);
 static inline const char* port_to_service(uint16_t);
 static inline const char* protocol_to_str(uint8_t);
+static inline void check_udp_payload_encryption(const uint8_t *, uint16_t, struct sovereignty_log *);
+static inline void check_tcp_payload_encryption(const uint8_t *, uint16_t, struct sovereignty_log *);
 
 static inline int load_ipv4_cidrs(struct rte_lpm *, const char *);
 static inline int load_ipv6_cidrs(struct rte_lpm6 *, const char *);

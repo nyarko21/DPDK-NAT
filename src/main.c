@@ -275,7 +275,7 @@ int main(int argc, char **argv)
             struct rte_tcp_hdr   *tcp;
             struct rte_udp_hdr   *udp;
             uint32_t next_hop;
-            char *sniptr;
+            const char *sniptr;
 
 
             uint16_t eth_type = eth_hdr->ether_type; // Already in Big Endian from wire

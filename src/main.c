@@ -34,8 +34,7 @@ struct rte_hash_parameters hash_params = {
     .entries = MAX_IP_ENTRIES,
     .key_len = sizeof(uint32_t),
     .hash_func = rte_jhash,
-    .hash_func_init_val = 0,
-    .socket_id = rte_socket_id(),
+    .hash_func_init_val = 0
 };
 
 
@@ -109,7 +108,7 @@ int main(int argc, char **argv)
     struct rte_lpm *lpmv4, *lpmv6;
     struct rte_ring *audit_ring;
     struct audit_ctx *ctx = malloc(sizeof(*ctx));
-    ctx->start_cycles = rte_get_timer_cycles()
+    ctx->start_cycles = rte_get_timer_cycles();
     ctx->start_time = time(NULL);
     ctx->hz = rte_get_timer_hz();
     struct rte_hash *ip_hash = rte_hash_create(&hash_params);
@@ -348,7 +347,6 @@ int main(int argc, char **argv)
                     entry->src_port = s_port;
                     entry->dst_port = d_port;
                     entry->timestamp = now; // High-precision cycle count
-                    entry->sni = entry->sni;
                     entry->service = port_to_service(ntohs(s_port));
                     entry->protocol = protocol_to_str(ntohs(proto));
 
@@ -381,9 +379,6 @@ int main(int argc, char **argv)
                     rte_pktmbuf_pkt_len(bufs[i]));
         }
 
-
-        // Print stats periodically
-        uint64_t now = rte_get_timer_cycles();
         if (now - last_stat_print > rte_get_timer_hz()) {
             rte_eth_stats_get(0, &stats);
 

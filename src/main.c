@@ -606,6 +606,7 @@ load_ipv4_cidrs(struct rte_lpm *lpm, const char *filename)
     return 0;
 }
 
+/*
 static inline int
 load_ipv6_cidrs(struct rte_lpm6 *lpm6, const char *filename)
 {
@@ -657,6 +658,7 @@ load_ipv6_cidrs(struct rte_lpm6 *lpm6, const char *filename)
     printf("Loaded %d IPv6 prefixes into LPM6\n", count);
     return 0;
 }
+*/
 
 static inline int
 audit_consumer(void *arg)

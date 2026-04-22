@@ -92,7 +92,7 @@ struct port_config {
 static inline void signal_handler(int);
 struct rte_mempool * create_memory_pool(const char *, uint16_t, uint16_t,
         uint16_t, uint16_t, int);
-static inline const char *extract_sni(const uint8_t *, size_t, size_t);
+static inline const char *extract_sni(const uint8_t *, size_t, size_t*);
 static inline int audit_consumer(void *arg);
 static inline const char* port_to_service(uint16_t);
 static inline const char* protocol_to_str(uint8_t);

@@ -68,10 +68,6 @@ struct rte_lpm_config config = {
     .flags = 0
 };
 
-
-
-
-
 static const struct rte_eth_conf port_conf_default = {
     .rxmode = {
         /* Enable Multi-Queue to separate ARP (Queue 1) from NAT (Queue 0) */
@@ -95,7 +91,6 @@ static const struct rte_eth_conf port_conf_default = {
         .lsc = 1,
     },
 };
-
 
 
 int main(int argc, char **argv)
@@ -816,19 +811,19 @@ get_entry(uint32_t dst_ip, uint64_t now, uint64_t cyc)
         }
     }
 
-    if (now - entry->window_start_tsc > WINDOW_CYCLES) {
+    /*if (now - entry->window_start_tsc > WINDOW_CYCLES) {
 
         // only reset
         memset(entry, 0, sizeof(entry));
         entry->window_start_tsc = now;
-    }
+    }*/
     return entry;
 }
 
 static inline void
 check_tcp_payload_encryption(const uint8_t *payload, uint16_t len, struct sovereignty_log *entry)
 {
-    if (len < 16) return 0; // Too small to reliably judge
+    if (len < 16) return; // Too small to reliably judge
 
     // 1. Protocol-Level Check: TLS Application Data
     // 0x17 is the ContentType for "Application Data" in TLS 1.2 and 1.3
@@ -858,7 +853,7 @@ check_tcp_payload_encryption(const uint8_t *payload, uint16_t len, struct sovere
     }
 
     // If 3 out of 4 samples are non-printable, we treat it as encrypted
-    entry->is_encrypted = (non_ascii_count >= 3);
+    entry->is_data_encrypted = (non_ascii_count >= 3);
 }
 
 /**

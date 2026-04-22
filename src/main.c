@@ -56,8 +56,6 @@ struct audit_ctx {
     const char *output_file;
 };
 
-ip_hash = rte_hash_create(&hash_params);
-
 struct rte_lpm_config config = {
     .max_rules = 1024,
     .number_tbl8s = 256,
@@ -111,9 +109,10 @@ int main(int argc, char **argv)
     struct rte_lpm *lpmv4, *lpmv6;
     struct rte_ring *audit_ring;
     struct audit_ctx *ctx = malloc(sizeof(*ctx));
-    ctx->start_cycles = rte_rdtsc();
+    ctx->start_cycles = rte_get_timer_cycles()
     ctx->start_time = time(NULL);
     ctx->hz = rte_get_timer_hz();
+    struct rte_hash *ip_hash = rte_hash_create(&hash_params);
 
     const char *v4filename = "afrinic-gh-ipv4-cidr.txt";
     const char *v6filename = "afrinic-gh-ipv6-cidr.txt";
@@ -146,6 +145,8 @@ int main(int argc, char **argv)
         socket_id = rte_eth_dev_socket_id(port_id);
         if (socket_id == SOCKET_ID_ANY)
             socket_id = 0;
+
+        hash_params.socket_id = socket_id;
 
         socket_ids[port_id] = socket_id; // keep track of a port => socket id map
 
@@ -242,7 +243,7 @@ int main(int argc, char **argv)
 
     while (!force_quit) {
 
-        uint64_t now = rte_rdtsc();
+        uint64_t now = rte_get_timer_cycles();
         uint16_t nb_rx = rte_eth_rx_burst(0, 0, bufs, BURST_SIZE);
 
         if (nb_rx == 0)
@@ -347,7 +348,7 @@ int main(int argc, char **argv)
                     entry->src_port = s_port;
                     entry->dst_port = d_port;
                     entry->timestamp = now; // High-precision cycle count
-                    entry->sni = sni;
+                    entry->sni = entry->sni;
                     entry->service = port_to_service(ntohs(s_port));
                     entry->protocol = protocol_to_str(ntohs(proto));
 

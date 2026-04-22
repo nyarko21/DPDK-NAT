@@ -3,19 +3,30 @@
 #include <inttypes.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <time.h>
+#include <arpa/inet.h>
 
+#include <rte_eal.h>
+#include <rte_ethdev.h>
+#include <rte_mbuf.h>
 #include <rte_hash.h>
 #include <rte_jhash.h>
 #include <rte_malloc.h>
 #include <rte_lcore.h>
 #include <rte_lpm.h>
+#include <rte_lpm6.h>
+#include <rte_ring.h>
+#include <rte_errno.h>
+#include <rte_cycles.h>
+#include <rte_ip.h>
+#include <rte_tcp.h>
+#include <rte_udp.h>
 
-#include <rte_eal.h>
-#include <rte_ethdev.h>
-#include <rte_mbuf.h>
-#include <arpa/inet.h>
-
-#include <sys/stat.h>
 #include "local.h"
 
 struct rte_hash_parameters hash_params = {
@@ -112,7 +123,7 @@ int main(int argc, char **argv)
     struct rte_eth_link link;
     struct sovereignty_log *entry = malloc(sizeof(*entry));
     uint64_t clock_rate = rte_get_tsc_hz();
-    struct rte_lpm *lpmv4, lpmv6;
+    struct rte_lpm *lpmv4, *lpmv6;
     struct rte_ring *audit_ring;
     struct audit_ctx *ctx = malloc(sizeof(*ctx));
     ctx->start_cycles = rte_rdtsc();
@@ -289,12 +300,12 @@ int main(int argc, char **argv)
 
                 struct rte_ipv4_hdr *ipv4 = (struct rte_ipv4_hdr *)(eth_hdr + 1);
                 uint8_t proto = ipv4->next_proto_id;
-                uint32_t src_ip = rte_cpu_to_be_32(ipv4.src_addr);
-                uint32_t dst_ip = rte_cpu_to_be_32(ipv4.dst_addr);
+                uint32_t src_ip = rte_cpu_to_be_32(ipv4->src_addr);
+                uint32_t dst_ip = rte_cpu_to_be_32(ipv4->dst_addr);
                 uint16_t d_port, s_port;
 
 
-                if (rte_lpm_lookup(lpmv4, ipv4, &next_hop) == 0) {
+                if (rte_lpm_lookup(lpmv4, dst_ip, &next_hop) == 0) {
                     // Ghana IP, continue;
                     continue;
                 }

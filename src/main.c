@@ -38,21 +38,6 @@ struct rte_hash_parameters hash_params = {
     .socket_id = rte_socket_id(),
 };
 
-struct sovereignty_log {
-    char src_ip[INET_ADDRSTRLEN];
-    char dst_ip[INET_ADDRSTRLEN];
-    char sni[256];
-    const char *service;
-    const char *protocol;
-    uint32_t s_ip;
-    uint32_t d_ip;
-    uint64_t timestamp;
-    uint32_t bytes;
-    uint16_t dst_port;
-    uint16_t src_port;
-    bool is_data_encrypted;
-    bool is_tls_ech_handshake;
-};
 
 struct sovereignty_audit_entry {
     char dst_ip[INET_ADDRSTRLEN];
@@ -574,14 +559,14 @@ load_ipv4_cidrs(struct rte_lpm *lpm, const char *filename)
 {
     int fd = open(filename, O_RDONLY);
     if (fd < 0)
-        rte_exit("cannot open file %s\n", filename);
+        rte_exit(EXIT_FAILURE, "cannot open file %s\n", filename);
 
     struct stat st;
     fstat(fd, &st);
 
     char *data = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     if (data == MAP_FAILED)
-        rte_exit("failed to map file %s to memory\n", filename);
+        rte_exit(EXIT_FAILURE, "failed to map file %s to memory\n", filename);
 
     char *p = data;
     char *end = data + st.st_size;
@@ -626,14 +611,14 @@ load_ipv6_cidrs(struct rte_lpm6 *lpm6, const char *filename)
 {
     int fd = open(filename, O_RDONLY);
     if (fd < 0)
-        rte_exit("cannot open file %s\n", filename);
+        rte_exit(EXIT_FAILURE, "cannot open file %s\n", filename);
 
     struct stat st;
     fstat(fd, &st);
 
     char *data = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     if (data == MAP_FAILED)
-        rte_exit("failed to map file %s to memory\n", filename);
+        rte_exit(EXIT_FAILURE, "failed to map file %s to memory\n", filename);
 
     char *p = data;
     char *end = data + st.st_size;

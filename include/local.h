@@ -29,7 +29,7 @@
 #define REDIS 6379
 
 
-typedef ip_addr_t uint32_t;
+typedef uint32_t ip_addr_t;
 
 
 static volatile bool force_quit = false;
@@ -54,6 +54,22 @@ struct ip_entry {
     struct ip_stats stats;
     uint64_t window_start_tsc;
     uint16_t count;
+};
+
+struct sovereignty_log {
+    char src_ip[INET_ADDRSTRLEN];
+    char dst_ip[INET_ADDRSTRLEN];
+    char sni[256];
+    const char *service;
+    const char *protocol;
+    uint32_t s_ip;
+    uint32_t d_ip;
+    uint64_t timestamp;
+    uint32_t bytes;
+    uint16_t dst_port;
+    uint16_t src_port;
+    bool is_data_encrypted;
+    bool is_tls_ech_handshake;
 };
 
 struct ip_entry entries[MAX_IP_ENTRIES];

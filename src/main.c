@@ -334,7 +334,7 @@ int main(int argc, char **argv)
                 } else if (proto == IPPROTO_UDP) {
                     udp = (struct rte_udp_hdr *)((unsigned char *)ipv4 +
                     (ipv4->ihl * 4));
-                    unsigned char *payload = (unsigned char *)(udp + 1);
+                    const uint8_t *payload = (const uint8_t *)(udp + 1);
                     uint16_t payload_len = rte_be_to_cpu_16(ipv4->total_length) - (ipv4->ihl * 4) - sizeof(struct rte_udp_hdr);
                     d_port = rte_cpu_to_be_16(udp->dst_port);
                     s_port = rte_cpu_to_be_16(udp->src_port);
@@ -769,6 +769,7 @@ protocol_to_str(uint8_t proto)
     }
 }
 
+/*
 static inline struct ip_entry *
 lookup_ip(uint32_t dst_ip)
 {
@@ -780,6 +781,8 @@ lookup_ip(uint32_t dst_ip)
 
     return NULL;
 }
+
+
 
 static inline struct ip_entry *
 create_ip_entry(uint32_t dst_ip, uint64_t now, char *ip)
@@ -816,9 +819,11 @@ get_entry(uint32_t dst_ip, uint64_t now, uint64_t cyc)
         // only reset
         memset(entry, 0, sizeof(entry));
         entry->window_start_tsc = now;
-    }*/
+    }
     return entry;
 }
+
+*/
 
 static inline void
 check_tcp_payload_encryption(const uint8_t *payload, uint16_t len, struct sovereignty_log *entry)

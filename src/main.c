@@ -15,7 +15,6 @@
 #include <rte_mbuf.h>
 #include <arpa/inet.h>
 
-#include <openssl/sha.h> // For log integrity
 #include <sys/stat.h>
 #include "local.h"
 

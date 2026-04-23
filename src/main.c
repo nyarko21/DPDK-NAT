@@ -149,6 +149,7 @@ int main(int argc, char **argv)
 
         socket_ids[port_id] = socket_id; // keep track of a port => socket id map
 
+        printf("started pool\n");
         // create mempool for packets
         mbuf_pool = create_memory_pool(
             "NAT_MBUF_POOL_",
@@ -163,6 +164,7 @@ int main(int argc, char **argv)
             printf("Mempool Creation Failed:  %s\n", rte_strerror(rte_errno));
             rte_exit(EXIT_FAILURE, "Cannot create NAT mbuf pool on socket id %d\n", socket_id);
         }
+         printf("created memory pool\n");
 
         // create mempool for logging
         log_pool = create_memory_pool(
@@ -178,6 +180,8 @@ int main(int argc, char **argv)
             printf("Mempool Creation Failed:  %s\n", rte_strerror(rte_errno));
             rte_exit(EXIT_FAILURE, "Cannot create log mbuf pool on socket id %d\n", socket_id);
         }
+
+        printf("created log pool\n");
 
         ret = rte_eth_dev_configure(port_id, 1, 1, &port_conf);
         if (ret < 0) {
@@ -197,10 +201,14 @@ int main(int argc, char **argv)
             rte_exit(EXIT_FAILURE, "NAT RX queue setup failed\n");
         }
 
+        printf("rx queue setup\n");
+
         ret = rte_eth_dev_start(port_id);
         if (ret < 0) {
             rte_exit(EXIT_FAILURE, "Device %d start failed on err=%d\n", port_id, ret );
         }
+
+        printf("device started\n");
 
         // 9. Enable promiscuous mode
         ret = rte_eth_promiscuous_enable(port_id);
@@ -215,11 +223,12 @@ int main(int argc, char **argv)
         }
         load_ipv4_cidrs(lpmv4, v4filename); //load addresses into memory
 
-        lpmv6 = rte_lpm_create("ghana_lpm_v6", socket_id, &config);
+        /*lpmv6 = rte_lpm_create("ghana_lpm_v6", socket_id, &config);
         if (lpmv6 == NULL) {
             rte_exit(EXIT_FAILURE, "Failed to create LPM table for ipv6\n");
         }
         load_ipv4_cidrs(lpmv6, v6filename); // ditto for v6
+        */
 
         audit_ring = rte_ring_create(
             "AUDIT_RING",           // Unique name for the ring

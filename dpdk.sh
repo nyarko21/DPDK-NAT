@@ -28,3 +28,8 @@ sudo ./usertools/dpdk-devbind.py --status
 
 
 sudo dpdk-devbind.py -b vfio-pci 0000:03:00.0
+
+flusing on linux
+
+ip addr flush dev ifname
+ip link set dev ifname down/up

@@ -664,6 +664,10 @@ audit_consumer(void *arg)
     time_t start_time = ctx->start_time;
     uint64_t hz = ctx->hz;
 
+    if (hz == 0) {
+        rte_exit(EXIT_FAILURE, "CPU frequency is 0, cannot be used in timestamp.\n");
+    }
+
     // Bank of Ghana requires restricted access to audit trails
     // 0600: Only the application owner can read/write.
     int fd = open("audit.csv", O_WRONLY | O_APPEND | O_CREAT, 0600);

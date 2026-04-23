@@ -64,20 +64,9 @@ struct rte_lpm_config config = {
 static const struct rte_eth_conf port_conf_default = {
     .rxmode = {
         /* Enable Multi-Queue to separate ARP (Queue 1) from NAT (Queue 0) */
-        .mq_mode = RTE_ETH_MQ_RX_RSS,
-        //.offloads = 0,                   // adjust RX offloads if neededx
-    },
-    .rx_adv_conf = {
-        .rss_conf = {
-            .rss_key = NULL,
-            //.rss_hf = RTE_ETH_RSS_IP, // Default hashing for IP traffic for later
-        },
-    },
-    .txmode = {
         .mq_mode = RTE_ETH_MQ_RX_NONE,
-        .offloads = RTE_ETH_TX_OFFLOAD_IPV4_CKSUM |
-                    RTE_ETH_TX_OFFLOAD_UDP_CKSUM  |
-                    RTE_ETH_TX_OFFLOAD_TCP_CKSUM
+        max_lro_pkt_size = RTE_ETHER_MAX_LEN,
+        offloads = 0
     },
     /* CRITICAL: Enable the Link Status Change interrupt */
     .intr_conf = {
@@ -183,7 +172,7 @@ int main(int argc, char **argv)
 
         printf("created log pool\n");
 
-        ret = rte_eth_dev_configure(port_id, 1, 1, &port_conf);
+        ret = rte_eth_dev_configure(port_id, 1, 0, &port_conf);
         if (ret < 0) {
             rte_exit(EXIT_FAILURE, "Cannot configure device on port %d\n", port_id);
         }

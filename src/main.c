@@ -65,8 +65,8 @@ static const struct rte_eth_conf port_conf_default = {
     .rxmode = {
         /* Enable Multi-Queue to separate ARP (Queue 1) from NAT (Queue 0) */
         .mq_mode = RTE_ETH_MQ_RX_NONE,
-        max_lro_pkt_size = RTE_ETHER_MAX_LEN,
-        offloads = 0
+        .max_lro_pkt_size = RTE_ETHER_MAX_LEN,
+        .offloads = 0,
     },
     /* CRITICAL: Enable the Link Status Change interrupt */
     .intr_conf = {

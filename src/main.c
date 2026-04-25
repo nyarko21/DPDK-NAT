@@ -29,20 +29,45 @@
 
 #include "local.h"
 
-struct rte_hash_parameters hash_params = {
-    .name = "ip_hash",
-    .entries = MAX_IP_ENTRIES,
-    .key_len = sizeof(uint32_t),
-    .hash_func = rte_jhash,
-    .hash_func_init_val = 0
+struct flow_key {
+    uint32_t src_ip;
+    uint32_t dst_ip;
+    uint16_t src_port;
+    uint16_t dst_port;
+    uint8_t  proto;
+} __attribute__((__packed__));
+
+struct flow_audit_entry {
+    struct flow_key flow;     // flow
+    uint64_t byte_count;      // Total bytes moved
+    uint64_t packet_count;    // Total packets
+    uint64_t no_encrypted;      // number of encrypted packets in flow
+    uint64_t entry_start_tsc;   // first time the flow was init
+    uint64_t last_seen;     // time the flow communiction ended
+    uint64_t asn;   // ASN number of dest IP
+    char country[8];  // country of dest IP
+    char owner[128];     // owner of dest IP
+    char protocol[64];
+    char log_state[16];
+    char bank_name[128];
+} __rte_cache_aligned;
+
+struct asn_range {
+    uint32_t start_ip;
+    uint32_t end_ip;
+    uint32_t asn;
+    char country[8];
+    char owner[128];
 };
 
 
-struct sovereignty_audit_entry {
-    char dst_ip[INET_ADDRSTRLEN];
-    uint64_t total_bytes;   // Total volume for this session/packet
-    char org_name[64];      // Identity (from your Top 1000/rDNS table)
-    uint64_t timestamp;
+struct rte_hash_parameters params = {
+    .name = "flow_audit_table",
+    .entries = 262144,               // Table size
+    .key_len = sizeof(struct flow_key),
+    .hash_func = rte_jhash,          // Jenkins Hash (standard/fast)
+    .hash_func_init_val = 0,
+    .extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY, // Safe for multiple cores
 };
 
 struct audit_ctx {
@@ -53,6 +78,7 @@ struct audit_ctx {
     uint64_t hz;
     uint64_t timestamp;
     const char *output_file;
+    uint64_t audit_dropped;
 };
 
 struct rte_lpm_config config = {
@@ -63,7 +89,7 @@ struct rte_lpm_config config = {
 
 static const struct rte_eth_conf port_conf_default = {
     .rxmode = {
-        /* Enable Multi-Queue to separate ARP (Queue 1) from NAT (Queue 0) */
+        /* Enable Multi-Queue*/
         .mq_mode = RTE_ETH_MQ_RX_NONE,
         .max_lro_pkt_size = RTE_ETHER_MAX_LEN,
         .offloads = 0,
@@ -74,6 +100,12 @@ static const struct rte_eth_conf port_conf_default = {
     },
 };
 
+struct rte_hash *flow_table = NULL;
+struct flow_audit_entry *entries;
+
+struct asn_range *asn_db = NULL;
+uint32_t total_asn_entries = 0;
+uint64_t current_scan_idx;
 
 int main(int argc, char **argv)
 {
@@ -91,19 +123,19 @@ int main(int argc, char **argv)
     struct rte_eth_stats stats;
     uint64_t last_stat_print = 0;
     struct port_config net_port[RTE_MAX_ETHPORTS];
-    struct rte_eth_link link;
-    struct sovereignty_log *entry = malloc(sizeof(*entry));
+    struct flow_audit_entry *entry = malloc(sizeof(*entry));
     uint64_t clock_rate = rte_get_tsc_hz();
     struct rte_lpm *lpmv4, *lpmv6;
     struct rte_ring *audit_ring;
     struct audit_ctx *ctx = malloc(sizeof(*ctx));
     ctx->start_cycles = rte_get_timer_cycles();
     ctx->start_time = time(NULL);
-    ctx->hz = rte_get_timer_hz();
-    struct rte_hash *ip_hash = rte_hash_create(&hash_params);
+    ctx->hz = clock_rate;
+    uint64_t timeout = clock_rate * 10; // 10-second timeout
 
     const char *v4filename = "afrinic-gh-ipv4-cidr.txt";
     const char *v6filename = "afrinic-gh-ipv6-cidr.txt";
+    const char *asn_country = "ip2asn-v4-u32.tsv";
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -134,14 +166,12 @@ int main(int argc, char **argv)
         if (socket_id == SOCKET_ID_ANY)
             socket_id = 0;
 
-        hash_params.socket_id = socket_id;
-
-        socket_ids[port_id] = socket_id; // keep track of a port => socket id map
+        init_flow_table(socket_id);
 
         printf("started pool\n");
         // create mempool for packets
         mbuf_pool = create_memory_pool(
-            "NAT_MBUF_POOL_",
+            "MBUF_POOL_",
             NUM_MBUFS,
             MBUF_CACHE_SIZE,
             0,
@@ -151,7 +181,7 @@ int main(int argc, char **argv)
 
         if (mbuf_pool == NULL) {
             printf("Mempool Creation Failed:  %s\n", rte_strerror(rte_errno));
-            rte_exit(EXIT_FAILURE, "Cannot create NAT mbuf pool on socket id %d\n", socket_id);
+            rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on socket id %d\n", socket_id);
         }
          printf("created memory pool\n");
 
@@ -181,13 +211,13 @@ int main(int argc, char **argv)
         ret = rte_eth_rx_queue_setup(
             port_id,
             0,
-            RX_NAT_RING_SIZE,
+            RX_RING_SIZE,
             socket_id,
             NULL,
             mbuf_pool
         );
         if (ret < 0) {
-            rte_exit(EXIT_FAILURE, "NAT RX queue setup failed\n");
+            rte_exit(EXIT_FAILURE, " RX queue setup failed\n");
         }
 
         printf("rx queue setup\n");
@@ -211,13 +241,7 @@ int main(int argc, char **argv)
             rte_exit(EXIT_FAILURE, "Failed to create LPM table for ipv4\n");
         }
         load_ipv4_cidrs(lpmv4, v4filename); //load addresses into memory
-
-        /*lpmv6 = rte_lpm_create("ghana_lpm_v6", socket_id, &config);
-        if (lpmv6 == NULL) {
-            rte_exit(EXIT_FAILURE, "Failed to create LPM table for ipv6\n");
-        }
-        load_ipv4_cidrs(lpmv6, v6filename); // ditto for v6
-        */
+        load_asn_db(asn_country); // load ip to  asntocountry into memory
 
         audit_ring = rte_ring_create(
             "AUDIT_RING",           // Unique name for the ring
@@ -246,7 +270,7 @@ int main(int argc, char **argv)
         if (nb_rx == 0)
             continue;
 
-        entry->timestamp = now;
+        scan_for_logging(timeout, now);// scan and send a few logs
 
         printf("Received %" PRIu16 " packets\n", nb_rx);
         int i;
@@ -254,12 +278,7 @@ int main(int argc, char **argv)
         for (i = 0; i < nb_rx; i++) {
             printf("prefetchign\n");
             rte_prefetch0(rte_pktmbuf_mtod(bufs[i], void *));
-
-            // future: prefetch NAT entry too
-            // If you have a huge NAT table, prefetch the hash entry too
-            // rte_prefetch0(lookup_table_entry_for_this_packet);
         }
-
 
         for (i = 0; i < nb_rx; i++) {
             printf("starting loop\n");
@@ -280,87 +299,60 @@ int main(int argc, char **argv)
 
             if (likely(eth_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4))) {
                 printf("IP\n");
-
+                struct flow_key flow;
                 struct rte_ipv4_hdr *ipv4 = (struct rte_ipv4_hdr *)(eth_hdr + 1);
-                uint8_t proto = ipv4->next_proto_id;
-                uint32_t src_ip = rte_cpu_to_be_32(ipv4->src_addr);
-                uint32_t dst_ip = rte_cpu_to_be_32(ipv4->dst_addr);
-                uint16_t d_port, s_port;
+                flow.proto = ipv4->next_proto_id;
+                flow.src_ip = rte_cpu_to_be_32(ipv4->src_addr);
+                flow.dst_ip = rte_cpu_to_be_32(ipv4->dst_addr);
+
+                uint32_t bytes = m->pkt_len;
 
 
-                if (rte_lpm_lookup(lpmv4, dst_ip, &next_hop) == 0) {
+                if (rte_lpm_lookup(lpmv4, flow.dst_ip, &next_hop) == 0) {
                     // Ghana IP, continue;
                     continue;
                 }
 
-                memset(entry, 0, sizeof(*entry));
-
                 /* not ghana IP, flagged */
 
-
-
-                if (proto == IPPROTO_TCP) {
+                if (flow.proto == IPPROTO_TCP) {
 
                     tcp = (struct rte_tcp_hdr *)((unsigned char *)ipv4 +
                     (ipv4->ihl * 4));
-                    d_port = rte_cpu_to_be_16(tcp->dst_port);
-                    s_port = rte_cpu_to_be_16(tcp->src_port);
+                    flow.dst_port = rte_cpu_to_be_16(tcp->dst_port);
+                    flow.src_port = rte_cpu_to_be_16(tcp->src_port);
                     const uint8_t *data = (uint8_t *)tcp + ((tcp->data_off >> 4) * 4);
                     uint16_t tcp_payload_len = rte_be_to_cpu_16(ipv4->total_length)
                         - ((ipv4->ihl * 4) + ((tcp->data_off >> 4) * 4));
-                    size_t sni_len;
                     check_tcp_payload_encryption(data, tcp_payload_len, entry);
-                    if (entry->is_tls_ech_handshake) {
-                        static const char *unk = "ECH ENCRYPTED";
-                        rte_memcpy(entry->sni, unk, 14);
-                    }
-                    else {
-                        if ((sniptr = extract_sni(data, tcp_payload_len, &sni_len)) != NULL) {
-                            rte_memcpy(entry->sni, sniptr, sni_len);
-                            entry->sni[sni_len] = '\0';
-                        }
-                        else {
-                            static const char *unk = "UNKNOWN";
-                            rte_memcpy(entry->sni, unk, 8);
-                        }
-                    }
 
-                } else if (proto == IPPROTO_UDP) {
+                } else if (flow.proto == IPPROTO_UDP) {
+
                     udp = (struct rte_udp_hdr *)((unsigned char *)ipv4 +
                     (ipv4->ihl * 4));
                     const uint8_t *payload = (const uint8_t *)(udp + 1);
                     uint16_t payload_len = rte_be_to_cpu_16(ipv4->total_length) - (ipv4->ihl * 4) - sizeof(struct rte_udp_hdr);
-                    d_port = rte_cpu_to_be_16(udp->dst_port);
-                    s_port = rte_cpu_to_be_16(udp->src_port);
+                    flow.dst_port = rte_cpu_to_be_16(udp->dst_port);
+                    flow.src_port = rte_cpu_to_be_16(udp->src_port);
                     check_udp_payload_encryption(payload, payload_len, entry);
-                    if (entry->is_tls_ech_handshake) {
-                        static const char *unk = "ECH ENCRYPTED";
-                        rte_memcpy(entry->sni, unk, 14);
-                    }
                 }
 
-                if (rte_mempool_get(log_pool, (void **)&entry) == 0) {
-                    entry->d_ip = dst_ip;
-                    entry->s_ip = src_ip;
-                    entry->src_port = s_port;
-                    entry->dst_port = d_port;
-                    entry->timestamp = now; // High-precision cycle count
-                    entry->service = port_to_service(ntohs(s_port));
-                    entry->protocol = protocol_to_str(ntohs(proto));
+                entry = get_flow_entry(flow_table, &flow, now, timeout, bytes);
 
-                    /* 3. Hand over to the logging ring */
-                    if (rte_ring_enqueue(audit_ring, entry) < 0) {
-                        rte_mempool_put(log_pool, entry); // Drop if ring is full
-                    }
+                // If the flow has moved > 10MB (High Value), log it faster
+                if (entry->byte_count > 10000000) {
+                    move_to_audit_ring(entry);
+                    entry->last_seen = now;
+                    entry->packet_count = 0;
+                    entry->no_encrypted = 0;
+                    rte_strscpy(entry->log_state, "IN PROGRESS", 16));
                 }
 
                 printf("IPv4 received\n");
                 continue;
             }
             else if (unlikely(eth_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV6))) {
-
                     continue;
-                // The CPU prepares for this to be false
 
             }
             else {
@@ -404,7 +396,7 @@ create_memory_pool(const char *sig, uint16_t cnt, uint16_t cache_size,
     struct rte_mempool *mp;
 
     /* 1. Append the socket_id to the base name */
-    /* Result will be "NAT_MBUF_POOL_0", "NAT_MBUF_POOL_1", etc. */
+    /* Result will be "MBUF_POOL_0", "MBUF_POOL_1", etc. */
     snprintf(pool_name, sizeof(pool_name), "%s%u", sig, sock_id);
 
     /* 2. Try to find if it already exists (from another port on same socket) */
@@ -437,115 +429,187 @@ signal_handler(int signum)
     }
 }
 
+static inline void
+init_flow_table(int socket_id) {
+    struct rte_hash_parameters params = {
+        .name = "flow_audit_table",
+        .entries = MAX_HASH_ENTRY,
+        .key_len = sizeof(struct flow_key),
+        .hash_func = rte_jhash,        // Standard Jenkins hash for DPDK
+        .hash_func_init_val = 0,
+        .socket_id = socket_id,  // Current NUMA node
+        .extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF, // Lock-free read/write
+    };
 
-#define TLS_CLIENT_HELLO 1
-#define TLS_EXT_SNI 0x0000
-
-static inline const char *
-extract_sni(const uint8_t *data, size_t len, size_t *sni_len)
-{
-    const uint8_t *p = data;
-    const uint8_t *end = data + len;
-
-    // ---- TLS record header (5 bytes) ----
-    if (p + 5 > end)
-        return NULL;
-
-    if (p[0] != TLS_HANDSHAKE)
-        return NULL;
-
-    uint16_t record_len = (p[3] << 8) | p[4];
-    p += 5;
-
-    if (p + record_len > end)
-        return NULL;
-
-    // ---- Handshake header ----
-    if (p + 4 > end)
-        return NULL;
-
-    if (p[0] != TLS_CLIENT_HELLO)
-        return NULL;
-
-    uint32_t hs_len = (p[1] << 16) | (p[2] << 8) | p[3];
-    p += 4;
-
-    if (p + hs_len > end)
-        return NULL;
-
-    // ---- Skip:
-    // version (2) + random (32)
-    if (p + 34 > end)
-        return NULL;
-    p += 34;
-
-    // session ID
-    if (p + 1 > end)
-        return NULL;
-    uint8_t sid_len = p[0];
-    p += 1 + sid_len;
-
-    // cipher suites
-    if (p + 2 > end)
-        return NULL;
-    uint16_t cs_len = (p[0] << 8) | p[1];
-    p += 2 + cs_len;
-
-    // compression methods
-    if (p + 1 > end)
-        return NULL;
-    uint8_t comp_len = p[0];
-    p += 1 + comp_len;
-
-    // ---- Extensions ----
-    if (p + 2 > end)
-        return NULL;
-    uint16_t ext_len = (p[0] << 8) | p[1];
-    p += 2;
-
-    const uint8_t *ext_end = p + ext_len;
-
-    while (p + 4 <= ext_end) {
-        uint16_t ext_type = (p[0] << 8) | p[1];
-        uint16_t ext_size = (p[2] << 8) | p[3];
-        p += 4;
-
-        if (p + ext_size > ext_end)
-            return NULL;
-
-        if (ext_type == TLS_EXT_SNI) {
-            const uint8_t *sni = p;
-
-            // SNI list length
-            if (sni + 2 > p + ext_size)
-                return NULL;
-
-            uint16_t list_len = (sni[0] << 8) | sni[1];
-            sni += 2;
-
-            // Only first entry
-            if (sni + 3 > p + ext_size)
-                return NULL;
-
-            uint8_t name_type = sni[0];
-            uint16_t name_len = (sni[1] << 8) | sni[2];
-            sni += 3;
-
-            if (name_type != 0)
-                return NULL;
-
-            if (sni + name_len > p + ext_size)
-                return NULL;
-
-            *sni_len = strlen(sni);
-
-            return (const char *)sni; // NOT null-terminated!
-        }
-
-        p += ext_size;
+    flow_table = rte_hash_create(&params);
+    if (flow_table == NULL) {
+        rte_exit(EXIT_FAILURE, "Unable to create flow hash table\n");
     }
 
-    return NULL;
+    size_t total_size = sizeof(struct flow_audit_entry) * MAX_HASH_ENTRY;
+
+    // 3. Allocate from Hugepages
+    // We use 'zmalloc' to ensure the memory is zeroed out (initialized)
+    entries = rte_zmalloc_socket(
+        "FLOW_AUDIT_ENTRIES",      // Name for debugging
+        total_size,                // Total bytes
+        RTE_CACHE_LINE_SIZE,       // Align to cache line for speed
+        socket_id            // Allocate on the local CPU's memory
+    );
+
+    if (entries == NULL) {
+        rte_exit(EXIT_FAILURE, "Cannot allocate memory for flow entries\n");
+    }
+}
+
+static inline struct flow_audit_entry *
+get_flow_entry(struct rte_hash *flow_table, struct flow_key *key, uint64_t now,
+                uint64_t timeout, uint32_t bytes)
+{
+    struct flow_audit_entry *entry
+    int ret = rte_hash_lookup(flow_table, key);
+
+    if (likely(ret >= 0)) {
+        entry = &entries[ret];
+
+        if (now - entry->last_seen > timeout) { // 60 seconds = new timestamp
+
+            // kill association, log and reset
+            memset((struct flow_key *)entry + 1, 0, sizeof(*entry) - sizeof(*key)); // reset all but leave the flow
+        }
+    } else {
+        // new flow
+        ret = rte_hash_add_key(flow_table, key);
+        if (unlikely(ret < 0)) {
+            printf("entry table full: size is %zu\n", rte_hash_count(flow_table));
+            return NULL; // table full or error
+        }
+        entry = &entries[ret];
+        entry->entry_start_tsc = now;
+    }
+
+    entry->packet_count++;
+    entry->last_seen = now; // update last seen
+    entry->byte_count += bytes;
+    entry->protocol = protocol_to_str(ntohs(entry->flow.proto));
+    return entry;
+}
+
+static inline void
+move_to_audit_ring(struct rte_ring *audit_ring, struct rte_mempool *audit_pool,
+    struct flow_audit_entry *entry) {
+
+    struct flow_audit_entry *log_msg;
+
+    // Get a clean buffer from the log mempool
+    if (rte_mempool_get(audit_pool, (void **)&log_msg) == 0) {
+        // Deep copy the snapshot
+        rte_memcpy(log_msg, entry, sizeof(*log_msg));
+
+        // Push to the ring for the background logger lcore
+        if (rte_ring_enqueue(audit_ring, log_msg) < 0) {
+            rte_mempool_put(audit_pool, log_msg); // Drop if ring full
+
+        }
+    }
+}
+
+static inline void
+scan_for_logging(uint32_t timeout, uint64_t now) {
+
+    for (int j = 0; j < ENTRIES_PER_SCAN; j++) {
+        struct flow_audit_entry *e = &entries[current_scan_idx];
+
+        if (now - e->last_seen > timeout) {
+            if (e->packet_count > 0)
+                move_to_audit_ring(e);
+
+            rte_strscpy(e->log_state, "CLOSED", 16);
+
+            // CRITICAL: Remove from hash table so the index can be reused
+            // Note: We use the key stored inside the entry itself
+            rte_hash_del_key(flow_table, &e->flow);
+
+            // Clear the entry in the hugepage array
+            memset(e, 0, sizeof(struct flow_audit_entry));
+        }
+
+        // Increment and wrap around the global array
+        current_scan_idx++;
+        if (unlikely(current_scan_idx >= MAX_HASH_ENTRY)) {
+            current_scan_idx = 0;
+        }
+    }
+}
+
+static inline int
+load_asn_db(const char *path) {
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return -1;
+
+    struct stat st;
+    fstat(fd, &st);
+
+    // Map file to memory for fast parsing
+    char *map = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (map == MAP_FAILED) { close(fd); return -1; }
+
+    // Count lines to allocate exact memory
+    for (long i = 0; i < st.st_size; i++) {
+        if (map[i] == '\n') total_asn_entries++;
+    }
+
+    // Allocate in Hugepages for the Logger Core
+    asn_db = rte_zmalloc("ASN_DATABASE", sizeof(struct asn_range) * total_asn_entries, 0);
+    if (!asn_db) {
+        munmap(map, st.st_size);
+        close(fd);
+        rte_exit(EXIT_FAILURE, "failed to allocate for ASN database\n");
+        return -1;
+    }
+
+    char *line = map;
+    for (uint32_t i = 0; i < total_asn_entries; i++) {
+        // %u\t%u\t%u -> Start, End, ASN
+        // %s\t -> Country code (stops at tab)
+        // %[^\n] -> Owner (reads everything until the newline, including spaces)
+        sscanf(line, "%u\t%u\t%u\t%8s\t%127[^\n]",
+               &asn_db[i].start_ip, &asn_db[i].end_ip, &asn_db[i].asn,
+               asn_db[i].country, asn_db[i].owner);
+
+        char *next = strchr(line, '\n');
+        if (!next) break;
+        line = next + 1;
+    }
+
+    munmap(map, st.st_size);
+    close(fd);
+    return 0;
+}
+
+static inline struct asn_range*
+lookup_ip_metadata(uint32_t ip) {
+    if (unlikely(!asn_db)) return NULL;
+
+    uint32_t low = 0;
+    uint32_t high = total_asn_entries - 1;
+
+    while (low <= high) {
+        uint32_t mid = low + (high - low) / 2;
+        struct asn_range *entry = &asn_db[mid];
+
+        // Check if IP is within this range [Start, End]
+        if (ip >= entry->start_ip && ip <= entry->end_ip) {
+            return entry;
+        }
+
+        if (ip < entry->start_ip) {
+            high = mid - 1;
+        } else {
+            low = mid + 1;
+        }
+    }
+    return NULL; // Not found
 }
 
 static inline int
@@ -600,89 +664,40 @@ load_ipv4_cidrs(struct rte_lpm *lpm, const char *filename)
     return 0;
 }
 
-/*
-static inline int
-load_ipv6_cidrs(struct rte_lpm6 *lpm6, const char *filename)
-{
-    int fd = open(filename, O_RDONLY);
-    if (fd < 0)
-        rte_exit(EXIT_FAILURE, "cannot open file %s\n", filename);
-
-    struct stat st;
-    fstat(fd, &st);
-
-    char *data = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
-    if (data == MAP_FAILED)
-        rte_exit(EXIT_FAILURE, "failed to map file %s to memory\n", filename);
-
-    char *p = data;
-    char *end = data + st.st_size;
-
-    int count = 0;
-
-    while (p < end) {
-        char *line_end = memchr(p, '\n', end - p);
-        if (!line_end) break;
-
-        *line_end = '\0';
-
-        // parse "IPv6/PREFIX"
-        char *slash = strchr(p, '/');
-        if (slash) {
-            *slash = '\0';
-
-            const char *ip_str = p;
-            int prefix = atoi(slash + 1);
-
-            uint8_t ip[16];
-
-            if (inet_pton(AF_INET6, ip_str, ip) == 1) {
-                if (rte_lpm6_add(lpm6, ip, prefix, 1) == 0) {
-                    count++;
-                }
-            }
-        }
-
-        p = line_end + 1;
-    }
-
-    munmap(data, st.st_size);
-    close(fd);
-
-    printf("Loaded %d IPv6 prefixes into LPM6\n", count);
-    return 0;
-}
-*/
-
 static inline int
 audit_consumer(void *arg)
 {
     struct audit_ctx *ctx = arg;
-    struct sovereignty_log *entries[BURST_SIZE];
+    struct flow_audit_entry *entries[BURST_SIZE];
+    struct asn_range *asn_info;
+    double encryption_ratio;
 
+    // Cache context variables locally for speed
     uint64_t start_cycles = ctx->start_cycles;
     time_t start_time = ctx->start_time;
     uint64_t hz = ctx->hz;
 
     if (hz == 0) {
-        rte_exit(EXIT_FAILURE, "CPU frequency is 0, cannot be used in timestamp.\n");
+        rte_exit(EXIT_FAILURE, "CRITICAL: CPU frequency is 0. Timestamping impossible.\n");
     }
 
-    // Bank of Ghana requires restricted access to audit trails
-    // 0600: Only the application owner can read/write.
+    /* SECURE FILE ACCESS */
     int fd = open("audit.csv", O_WRONLY | O_APPEND | O_CREAT, 0600);
-
     if (fd < 0) {
         rte_exit(EXIT_FAILURE, "CRITICAL: Audit log inaccessible. System must halt.\n");
     }
+
+    // Write CSV Header if file is new
     if (lseek(fd, 0, SEEK_END) == 0) {
-        const char *header = "Time,Source (Bank),Destination,Service,SNI state, protocol\n";
-        write(fd, header, strlen(header));
+        const char *header = "Bank_Name,Time,Source_IP,Dest_IP,Encryption_Ratio,Protocol,Source_Port, Dest_Port,Bytes,ASN,Owner,Country, State\n";
+        if (write(fd, header, strlen(header)) < 0) {
+            rte_exit(EXIT_FAILURE, "Failed to write CSV header.\n");
+        }
     }
 
-    while (1) {
+    printf("[Audit] Logger Core started. Writing to audit.csv\n");
 
-        // Inside your audit_consumer loop
+    while (1) {
         unsigned int n = rte_ring_dequeue_burst(ctx->audit_ring, (void **)entries, BURST_SIZE, NULL);
 
         if (unlikely(n == 0)) {
@@ -691,38 +706,93 @@ audit_consumer(void *arg)
         }
 
         for (unsigned int i = 0; i < n; i++) {
-            char buf[1024];
-            struct sovereignty_log *entry = entries[i];
+            struct flow_audit_entry *entry = entries[i];
+            char buf[2048];
             char s_ip_str[INET_ADDRSTRLEN];
             char d_ip_str[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &entry->s_ip, s_ip_str, INET_ADDRSTRLEN);
-            inet_ntop(AF_INET, &entry->d_ip, d_ip_str, INET_ADDRSTRLEN);
-
-            // 2. Format Timestamp to HH:MM:SS
-            time_t pkt_time = start_time + ((entry->timestamp - start_cycles) / hz);
-            struct tm *tm_info = localtime(&pkt_time);
             char time_str[9];
-            strftime(time_str, sizeof(time_str), "%H:%M:%S", tm_info);
+            struct tm tm_res;
+            /* we need them back to host order for inet_ntop */
+            uint32_t src = rte_cpu_to_be_32(entry->flow.src_ip);
+            uint32_t dst = rte_cpu_to_be_32(entry->flow.dst_ip);
 
-            // 3. Generate CSV Row
-            int len = snprintf(buf, sizeof(buf),
-                "%s,%s,%s,%s,%s,%s\n",
-                time_str,             // Time
-                s_ip_str,          // Source (Bank)
-                d_ip_str,    // Destination (SNI or IP)
-                entry->service,         // Service (SWIFT/GIP/Update)
-                entry->sni,             // SNI
-                entry->protocol);       // protocol
+            // 2. CONVERT IP TO STRINGS
+            inet_ntop(AF_INET, &src, s_ip_str, INET_ADDRSTRLEN);
+            inet_ntop(AF_INET, &dst, d_ip_str, INET_ADDRSTRLEN);
 
+            // 3. GENERATE TIMESTAMP (HH:MM:SS)
+            double diff_sec = (double)(entry->entry_start_tsc - start_cycles) / hz;
+            time_t pkt_time = start_time + (time_t)diff_sec;
+
+            // localtime_r is thread-safe and requires the &tm_res pointer
+            localtime_r(&pkt_time, &tm_res);
+            strftime(time_str, sizeof(time_str), "%H:%M:%S", &tm_res);
+
+            // 4. ENRICH WITH ASN DATA
+            // Convert to Host Byte Order for the binary search database
+            asn_info = lookup_ip_metadata(entry->flow.dst_ip);
+
+            if (asn_info) {
+                entry->asn = asn_info->asn;
+                rte_strscpy(entry->country, asn_info->country, sizeof(entry->country));
+                rte_strscpy(entry->owner, asn_info->owner, sizeof(entry->owner));
+            } else {
+                entry->asn = 0;
+                rte_strscpy(entry->country, "??", sizeof(entry->country));
+                rte_strscpy(entry->owner, "UNKNOWN_NET", sizeof(entry->owner));
+            }
+
+            if (entry->packet_count > 0) {
+                encryption_ratio = (double)(entry->no_encrypted / entry->packet_count);
+            }
+
+            // CEF Formatting Logic
+            char cef_buf[2048];
+            int len = snprintf(cef_buf, sizeof(cef_buf),
+                "CEF:0|%s|Sovereignty-Probe|1.0|100|High Value Flow|3|"
+                "rt=%s src=%s dst=%s spt=%u dpt=%u app=%s out=%lu cs1Label=CryptoRatio cs1=%.2f cn1Label=ASN cn1=%u sntdom=%s cs2Label=Country cs2=%s msg=%s\n",
+                entry->bank_name,     // Vendor
+                time_str,           // Receipt Time
+                s_ip_str,           // Source IP
+                d_ip_str,           // Dest IP
+                entry->flow.src_port,           // Source Port
+                entry->flow.dst_port,           // Dest Port
+                entry->protocol,    // Protocol
+                entry->byte_count,  // Bytes
+                encryption_ratio,   // Custom String 1 (Ratio)
+                entry->asn,         // Custom Number 1 (ASN)
+                entry->owner,       // Network Owner
+                entry->country,     // Country Code
+                entry->log_state    // Status Message
+            );
+
+            // 5. GENERATE CSV ROW (Fintech Standard)
+            /*int len = snprintf(buf, sizeof(buf),
+                "%s,%s,%s,%s,%.2f,%s,%u,%u,%lu,%u,\"%s\",%s,%s\n",
+                time_str,           // Time
+                s_ip_str,           // Source
+                d_ip_str,           // Destination
+                encryption_ratio,    // crypto state
+                entry->protocol,    // Protocol (e.g., HTTPS)
+                entry->flow.src_port, // source port
+                entry->flow.dst_port, // destination port
+                entry->byte_count,  // Volume
+                entry->asn,         // ASN
+                entry->owner,       // Network Owner (quoted for CSV safety)
+                entry->country,      // Country Code
+                entry->log_state    // log state, partial or complete
+            );*/
+
+            // 6. ATOMIC WRITE & FAIL-CLOSED LOGIC
             if (unlikely(write(fd, buf, len) < 0)) {
-                // Fintechs must "Fail-Closed" if logging fails
                 rte_exit(EXIT_FAILURE, "Storage Failure: Ghana Cyber Act Compliance Breach.\n");
             }
 
+            // Return entry to the pool for reuse
             rte_mempool_put(ctx->log_pool, entry);
         }
 
-        // Immediate consistency for financial records
+        // Ensure data is physically on disk before next burst
         fdatasync(fd);
     }
 
@@ -765,76 +835,20 @@ protocol_to_str(uint8_t proto)
     }
 }
 
-/*
-static inline struct ip_entry *
-lookup_ip(uint32_t dst_ip)
-{
-    int ret = rte_hash_lookup(ip_hash, &dst_ip);
-
-    if (likely(ret >= 0)) {
-        return &entries[ret];
-    }
-
-    return NULL;
-}
-
-
-
-static inline struct ip_entry *
-create_ip_entry(uint32_t dst_ip, uint64_t now, char *ip)
-{
-    int ret = rte_hash_add_key(ip_hash, &dst_ip);
-
-    if (unlikely(ret < 0)) {
-        return NULL; // table full or error
-    }
-
-    struct sovereignty_audit_entry *entry = &entries[ret];
-
-    memset(entry, 0, sizeof(entry));
-    inet_ntop(AF_INET, &dst_ip, entry->ip, INET_ADDRSTRLEN);
-    entry->window_start_tsc = now;
-
-    return entry;
-}
-
-static inline struct ip_entry *
-get_entry(uint32_t dst_ip, uint64_t now, uint64_t cyc)
-{
-    struct ip_entry *entry = lookup_ip(dst_ip);
-    if (entry == NULL) {
-        entry = create_ip_entry(dst_ip, now, cyc);
-        if (unlikely(entry == NULL)) {
-            printf("entry table full\n");
-            return NULL;
-        }
-    }
-
-    /*if (now - entry->window_start_tsc > WINDOW_CYCLES) {
-
-        // only reset
-        memset(entry, 0, sizeof(entry));
-        entry->window_start_tsc = now;
-    }
-    return entry;
-}
-
-*/
-
 static inline void
-check_tcp_payload_encryption(const uint8_t *payload, uint16_t len, struct sovereignty_log *entry)
+check_tcp_payload_encryption(const uint8_t *payload, uint16_t len, struct flow_audit_entry *entry)
 {
     if (len < 16) return; // Too small to reliably judge
 
     // 1. Protocol-Level Check: TLS Application Data
     // 0x17 is the ContentType for "Application Data" in TLS 1.2 and 1.3
     if (payload[0] == 0x17 && payload[1] == 0x03) {
-        entry->is_data_encrypted = true;
+        entry->no_encrypted++;
         return;
     }
 
     if(payload[0] == 0x16 && payload[1] == 0x03) {
-        entry->is_tls_ech_handshake = true;
+        entry->no_encrypted++;
         return;
     }
 
@@ -854,7 +868,9 @@ check_tcp_payload_encryption(const uint8_t *payload, uint16_t len, struct sovere
     }
 
     // If 3 out of 4 samples are non-printable, we treat it as encrypted
-    entry->is_data_encrypted = (non_ascii_count >= 3);
+    if (non_ascii_count >= 3)
+         entry->no_encrypted++;
+
 }
 
 /**
@@ -862,7 +878,7 @@ check_tcp_payload_encryption(const uint8_t *payload, uint16_t len, struct sovere
  * 0 if it appears to be plaintext (DNS, NTP, etc.)
  */
 static inline void
-check_udp_payload_encryption(const uint8_t *payload, uint16_t len, struct sovereignty_log *entry)
+check_udp_payload_encryption(const uint8_t *payload, uint16_t len, struct flow_audit_entry *entry)
 {
     if (len < 8)
         return;
@@ -872,12 +888,12 @@ check_udp_payload_encryption(const uint8_t *payload, uint16_t len, struct sovere
     // 0x16 = Handshake, 0x17 = Application Data
     // DTLS Version 1.2 is 0xfe fd
     if (payload[0] == 0x16 && payload[1] == 0xfe) {
-        entry->is_tls_ech_handshake = true;
+        entry->no_encrypted++;
         return;
     }
 
     if (payload[0] == 0x17 && payload[1] == 0xfe) {
-        entry->is_data_encrypted = true;
+        entry->no_encrypted++;
         return;
     }
 
@@ -893,8 +909,8 @@ check_udp_payload_encryption(const uint8_t *payload, uint16_t len, struct sovere
             if (payload[i] < 32 || payload[i] > 126) non_ascii++;
         }
         if (non_ascii >= 3)
-            entry->is_data_encrypted = true;
+            entry->no_encrypted++;
     }
 
-    return;// Likely Plaintext (e.g., DNS)
+    return;
 }

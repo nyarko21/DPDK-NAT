@@ -285,8 +285,7 @@ int main(int argc, char **argv)
             struct rte_mbuf *m = bufs[i];
 
 
-            // 2. MTOD: Get the pointer to the start of the Ethernet Header.
-            // This triggers the 64-byte fetch into one of your 512 L1 slots.
+            // mtod
             struct rte_ether_hdr *eth_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
             struct rte_ipv4_hdr  *ipv4;
             struct rte_tcp_hdr   *tcp;
@@ -295,7 +294,7 @@ int main(int argc, char **argv)
             const char *sniptr;
 
 
-            uint16_t eth_type = eth_hdr->ether_type; // Already in Big Endian from wire
+            uint16_t eth_type = eth_hdr->ether_type;
 
             if (likely(eth_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4))) {
                 printf("IP\n");
@@ -357,12 +356,12 @@ int main(int argc, char **argv)
             }
             else {
                 printf("drop\n");
-                // The "Trash Can" for everything else
+                // free
                 rte_pktmbuf_free(m);
                 continue;
             }
 
-            // 4. FREE: Once done, the cache line is marked as 'dirty' or 'freeable'
+            // 4. FREE
             rte_pktmbuf_free(m);
 
             printf("  Packet length: %u bytes\n",
@@ -388,7 +387,7 @@ int main(int argc, char **argv)
     return 0;
 }
 
-struct rte_mempool *
+static inline struct rte_mempool *
 create_memory_pool(const char *sig, uint16_t cnt, uint16_t cache_size,
         uint16_t priv_size, uint16_t data_room_size, int sock_id)
 {
@@ -449,7 +448,7 @@ init_flow_table(int socket_id) {
     size_t total_size = sizeof(struct flow_audit_entry) * MAX_HASH_ENTRY;
 
     // 3. Allocate from Hugepages
-    // We use 'zmalloc' to ensure the memory is zeroed out (initialized)
+    // zero out memory
     entries = rte_zmalloc_socket(
         "FLOW_AUDIT_ENTRIES",      // Name for debugging
         total_size,                // Total bytes
@@ -672,7 +671,6 @@ audit_consumer(void *arg)
     struct asn_range *asn_info;
     double encryption_ratio;
 
-    // Cache context variables locally for speed
     uint64_t start_cycles = ctx->start_cycles;
     time_t start_time = ctx->start_time;
     uint64_t hz = ctx->hz;
@@ -783,7 +781,6 @@ audit_consumer(void *arg)
                 entry->log_state    // log state, partial or complete
             );*/
 
-            // 6. ATOMIC WRITE & FAIL-CLOSED LOGIC
             if (unlikely(write(fd, buf, len) < 0)) {
                 rte_exit(EXIT_FAILURE, "Storage Failure: Ghana Cyber Act Compliance Breach.\n");
             }

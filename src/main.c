@@ -773,7 +773,7 @@ audit_consumer(void *arg)
                 s_ip_str,           // Source
                 d_ip_str,           // Destination
                 encryption_ratio,    // crypto state
-                entry->protocol,    // Protocol (e.g., HTTPS)
+                entry->protocol,    // Protocol ()
                 entry->flow.src_port, // source port
                 entry->flow.dst_port, // destination port
                 entry->byte_count,  // Volume

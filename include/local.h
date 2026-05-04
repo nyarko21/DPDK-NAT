@@ -96,7 +96,7 @@ scan_for_logging(struct audit_ctx *ctx, uint32_t timeout, uint64_t now) {
         }
 
         // Increment and wrap around the global array
-        current_scan_idx++;
+        //current_scan_idx++;
         if (unlikely(current_scan_idx >= MAX_HASH_ENTRY)) {
             current_scan_idx = 0;
         }

@@ -309,7 +309,6 @@ int main(int argc, char **argv)
                 struct flow_key flow;
                 struct rte_ipv4_hdr *ipv4 = (struct rte_ipv4_hdr *)(eth_hdr + 1);
                 flow.proto = ipv4->next_proto_id;
-                printf("next proto id is %u\n", flow.proto);
                 flow.src_ip = rte_be_to_cpu_32(ipv4->src_addr);
                 flow.dst_ip = rte_be_to_cpu_32(ipv4->dst_addr);
 
@@ -343,10 +342,6 @@ int main(int argc, char **argv)
 
                     flow.dst_port = rte_be_to_cpu_16(udp->dst_port);
                     flow.src_port = rte_be_to_cpu_16(udp->src_port);
-                    printf("src ip is %u\n", flow.src_ip);
-                    printf("src port is %u\n", flow.src_port);
-                    printf("dst ip is %u\n", flow.dst_ip);
-                    printf("dst port is %u\n", flow.dst_port);
                     check_udp_payload_encryption(payload, payload_len, entry);
                 }
 
@@ -481,6 +476,8 @@ get_flow_entry(struct rte_hash *flow_table, struct flow_key *key, uint64_t now,
 {
     struct flow_audit_entry *entry;
     int ret = rte_hash_lookup(flow_table, key);
+
+    printf("ret is %d\n", ret);
 
     if (likely(ret >= 0)) {
         entry = &entries[ret];

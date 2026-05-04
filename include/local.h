@@ -80,6 +80,7 @@ scan_for_logging(struct audit_ctx *ctx, uint32_t timeout, uint64_t now) {
 
         if (now - e->last_seen > timeout) {
             if (e->packet_count > 0) {
+                rte_strscpy(e->log_state, "CLOSED", 16);
                 printf("moving packets to audit ring\n");
                 move_to_audit_ring(ctx, e);
             }
@@ -90,9 +91,6 @@ scan_for_logging(struct audit_ctx *ctx, uint32_t timeout, uint64_t now) {
             * all previous memory writes (the memcpy) are finished and visible."
             */
             rte_wmb();
-
-            /* safe to destroy */
-            rte_strscpy(e->log_state, "CLOSED", 16);
 
             // CRITICAL: Remove from hash table so the index can be reused
             // Note: We use the key stored inside the entry itself

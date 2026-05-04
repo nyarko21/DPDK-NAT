@@ -152,7 +152,7 @@ int main(int argc, char **argv)
         rte_exit(EXIT_FAILURE, "CRITICAL: CPU frequency is 0. Timestamping impossible.\n");
     }
     ctx->hz = clock_rate;
-    timeout = clock_rate * 2; // 10-second timeout
+    timeout = clock_rate * 2; // 2-second timeout
 
     // 2. Check available ports
     nb_ports = rte_eth_dev_count_avail();
@@ -347,7 +347,7 @@ int main(int argc, char **argv)
                 entry = get_flow_entry(flow_table, &flow, now, timeout, bytes);
 
                 // If the flow has moved > 10MB (High Value), log it faster
-                if (entry->byte_count > 10000000) {
+                if (entry->byte_count > 100) {
                     move_to_audit_ring(ctx, entry);
                     entry->last_seen = now;
                     entry->packet_count = 0;

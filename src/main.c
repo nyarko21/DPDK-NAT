@@ -342,6 +342,10 @@ int main(int argc, char **argv)
 
                     flow.dst_port = rte_be_to_cpu_16(udp->dst_port);
                     flow.src_port = rte_be_to_cpu_16(udp->src_port);
+                    printf("src ip is %u\n", flow.src_ip);
+                    printf("src port is %u\n", flow.src_port);
+                    printf("dst ip is %u\n", flow.dst_ip);
+                    printf("dst port is %u\n", flow.dst_port);
                     check_udp_payload_encryption(payload, payload_len, entry);
                 }
 

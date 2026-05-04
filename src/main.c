@@ -497,12 +497,16 @@ get_flow_entry(struct rte_hash *flow_table, struct flow_key *key, uint64_t now,
         }
         entry = &entries[ret];
         entry->entry_start_tsc = now;
+        entry->flow.dst_ip = key->dst_ip;
+        entry->flow.dst_port = key->dst_port;
+        entry->flow.proto = key->proto;
+        entry->flow.src_ip = key->src_ip;
+        entry->flow.src_port = key->src_port;
     }
 
     entry->packet_count++;
     entry->last_seen = now; // update last seen
     entry->byte_count += bytes;
-    rte_memcpy(&entry->flow, key, sizeof(entry->flow));
     rte_strscpy(entry->protocol, protocol_to_str(entry->flow.proto), 16);
 
     printf("src ip is %u\n", entry->flow.src_ip);

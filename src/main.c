@@ -26,6 +26,7 @@
 #include <rte_ip.h>
 #include <rte_tcp.h>
 #include <rte_udp.h>
+#include <rte_byteorder.h>
 
 
 
@@ -308,8 +309,8 @@ int main(int argc, char **argv)
                 struct flow_key flow;
                 struct rte_ipv4_hdr *ipv4 = (struct rte_ipv4_hdr *)(eth_hdr + 1);
                 flow.proto = ipv4->next_proto_id;
-                flow.src_ip = rte_cpu_to_be_32(ipv4->src_addr);
-                flow.dst_ip = rte_cpu_to_be_32(ipv4->dst_addr);
+                flow.src_ip = rte_be_to_cpu_32(ipv4->src_addr);
+                flow.dst_ip = rte_be_to_cpu_32(ipv4->dst_addr);
 
                 uint32_t bytes = m->pkt_len;
 
@@ -325,8 +326,8 @@ int main(int argc, char **argv)
 
                     tcp = (struct rte_tcp_hdr *)((unsigned char *)ipv4 +
                     (ipv4->ihl * 4));
-                    flow.dst_port = rte_cpu_to_be_16(tcp->dst_port);
-                    flow.src_port = rte_cpu_to_be_16(tcp->src_port);
+                    flow.dst_port = rte_be_to_cpu_16(tcp->dst_port);
+                    flow.src_port = rte_be_to_cpu_16(tcp->src_port);
                     const uint8_t *data = (uint8_t *)tcp + ((tcp->data_off >> 4) * 4);
                     uint16_t tcp_payload_len = rte_be_to_cpu_16(ipv4->total_length)
                         - ((ipv4->ihl * 4) + ((tcp->data_off >> 4) * 4));
@@ -338,8 +339,8 @@ int main(int argc, char **argv)
                     (ipv4->ihl * 4));
                     const uint8_t *payload = (const uint8_t *)(udp + 1);
                     uint16_t payload_len = rte_be_to_cpu_16(ipv4->total_length) - (ipv4->ihl * 4) - sizeof(struct rte_udp_hdr);
-                    flow.dst_port = rte_cpu_to_be_16(udp->dst_port);
-                    flow.src_port = rte_cpu_to_be_16(udp->src_port);
+                    flow.dst_port = rte_be_to_cpu_16(udp->dst_port);
+                    flow.src_port = rte_be_to_cpu_16(udp->src_port);
                     check_udp_payload_encryption(payload, payload_len, entry);
                 }
 
@@ -724,8 +725,8 @@ audit_consumer(void *arg)
                 time_str,
                 s_ip_str,
                 d_ip_str,
-                entry->flow.src_port,
-                (entry->flow.dst_port,
+                entry->flow.src_port, // Ensure Host Order
+                entry->flow.dst_port, // Ensure Host Order
                 entry->protocol,                        // e.g., "TCP"
                 entry->byte_count,
                 encryption_ratio,

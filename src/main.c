@@ -47,7 +47,7 @@ struct flow_audit_entry {
     uint64_t asn;   // ASN number of dest IP
     char country[8];  // country of dest IP
     char owner[128];     // owner of dest IP
-    char protocol[64];
+    char protocol[16];
     char log_state[16];
     char bank_name[128];
 } __rte_cache_aligned;
@@ -492,7 +492,7 @@ get_flow_entry(struct rte_hash *flow_table, struct flow_key *key, uint64_t now,
     entry->packet_count++;
     entry->last_seen = now; // update last seen
     entry->byte_count += bytes;
-    entry->protocol = protocol_to_str(ntohs(entry->flow.proto));
+    rte_strscpy(entry->protocol, protocol_to_str(ntohs(entry->flow.proto)), 16);
     return entry;
 }
 

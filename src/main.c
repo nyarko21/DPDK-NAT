@@ -667,7 +667,7 @@ audit_consumer(void *arg)
             continue;
         }
 
-        printf("got packets\n");
+        printf("got packets for logging \n");
 
         for (unsigned int i = 0; i < n; i++) {
             struct flow_audit_entry *entry = entries[i];

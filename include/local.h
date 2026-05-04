@@ -84,7 +84,14 @@ scan_for_logging(struct audit_ctx *ctx, uint32_t timeout, uint64_t now) {
                 move_to_audit_ring(ctx, e);
             }
 
+            /*
+            * CRITICAL: This is a "Memory Barrier".
+            * It tells the CPU: "Do not start the following lines until
+            * all previous memory writes (the memcpy) are finished and visible."
+            */
+            rte_wmb();
 
+            /* safe to destroy */
             rte_strscpy(e->log_state, "CLOSED", 16);
 
             // CRITICAL: Remove from hash table so the index can be reused

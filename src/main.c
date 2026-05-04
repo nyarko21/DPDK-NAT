@@ -49,6 +49,7 @@ struct flow_audit_entry {
     char country[8];  // country of dest IP
     char owner[128];     // owner of dest IP
     char protocol[16];
+    char service[16];
     char log_state[16];
     char bank_name[128];
 } __rte_cache_aligned;
@@ -348,7 +349,7 @@ int main(int argc, char **argv)
                 entry = get_flow_entry(flow_table, &flow, now, timeout, bytes);
 
                 // If the flow has moved > 10MB (High Value), log it faster
-                if (entry->byte_count > 100) {
+                if (entry->byte_count > 1000) {
                     move_to_audit_ring(ctx, entry);
                     entry->last_seen = now;
                     entry->packet_count = 0;
@@ -508,16 +509,9 @@ get_flow_entry(struct rte_hash *flow_table, struct flow_key *key, uint64_t now,
     entry->last_seen = now; // update last seen
     entry->byte_count += bytes;
     rte_strscpy(entry->protocol, protocol_to_str(entry->flow.proto), 16);
-
-    printf("src ip is %u\n", entry->flow.src_ip);
-    printf("src port is %u\n", entry->flow.src_port);
-    printf("dst ip is %u\n", entry->flow.dst_ip);
-    printf("dst port is %u\n", entry->flow.dst_port);
+    rte_strscpy(entry->service, port_to_service(entry->flow.dst_port), 16);
     return entry;
 }
-
-
-
 
 
 static inline int
@@ -729,7 +723,7 @@ audit_consumer(void *arg)
             char cef_buf[2048];
             int len = snprintf(cef_buf, sizeof(cef_buf),
                 "CEF:0|%s|Sovereignty-Probe|1.0|100|High Value Flow|3|"
-                "rt=%s src=%s dst=%s spt=%u dpt=%u proto=%s out=%lu "
+                "rt=%s src=%s dst=%s spt=%u dpt=%u proto=%s service=%s out=%lubytes "
                 "cs1Label=EncryptionRatio cs1=%.2f "
                 "cn1Label=ASN cn1=%u "
                 "sntdom=%s "
@@ -742,6 +736,7 @@ audit_consumer(void *arg)
                 entry->flow.src_port, // Ensure Host Order
                 entry->flow.dst_port, // Ensure Host Order
                 entry->protocol,                        // e.g., "TCP"
+                entry->service,
                 entry->byte_count,
                 encryption_ratio,
                 entry->asn,
@@ -793,6 +788,7 @@ port_to_service(uint16_t port)
         case 443:  return "https";
         case 1433: return "mssql";
         case 1521: return "oracle";
+        case 1900: return "sspd";
         case 3306: return "mysql";
         case 5432: return "postgres";
         case 6379: return "redis";

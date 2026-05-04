@@ -502,6 +502,7 @@ get_flow_entry(struct rte_hash *flow_table, struct flow_key *key, uint64_t now,
     entry->packet_count++;
     entry->last_seen = now; // update last seen
     entry->byte_count += bytes;
+    rte_memcpy(&entry->flow, key, sizeof(entry->flow));
     rte_strscpy(entry->protocol, protocol_to_str(entry->flow.proto), 16);
 
     printf("src ip is %u\n", entry->flow.src_ip);

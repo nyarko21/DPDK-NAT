@@ -309,6 +309,7 @@ int main(int argc, char **argv)
                 struct flow_key flow;
                 struct rte_ipv4_hdr *ipv4 = (struct rte_ipv4_hdr *)(eth_hdr + 1);
                 flow.proto = ipv4->next_proto_id;
+                printf("next proto id is %u\n", flow.proto);
                 flow.src_ip = rte_be_to_cpu_32(ipv4->src_addr);
                 flow.dst_ip = rte_be_to_cpu_32(ipv4->dst_addr);
 

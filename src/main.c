@@ -789,6 +789,7 @@ port_to_service(uint16_t port)
 static inline const char*
 protocol_to_str(uint8_t proto)
 {
+    printf("protocol is %u\n", proto);
     switch (proto) {
         case 1:   return "ICMP";
         case 2:   return "IGMP";

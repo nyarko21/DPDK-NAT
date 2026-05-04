@@ -36,7 +36,7 @@ static struct rte_ether_addr my_local_mac[RTE_MAX_ETHPORTS];
 
 //static inline int link_status_callback(uint16_t, enum rte_eth_event_type, void *, void *);
 static inline void signal_handler(int);
-struct rte_mempool * create_memory_pool(const char *, uint16_t, uint16_t,
+static inline struct rte_mempool * create_memory_pool(const char *, uint16_t, uint16_t,
         uint16_t, uint16_t, int);
 static inline int audit_consumer(void *arg);
 static inline const char* port_to_service(uint16_t);
@@ -51,6 +51,25 @@ static inline int load_asn_db(const char *);
 static inline struct flow_audit_entry *get_flow_entry(struct rte_hash *, struct flow_key *, uint64_t,
                 uint64_t, uint32_t);
 static inline void init_flow_table(int);
+
+//static inline void move_to_audit_ring(struct audit_ctx *ctx, struct flow_audit_entry *);
+static inline void
+move_to_audit_ring(struct audit_ctx *ctx, struct flow_audit_entry *entry) {
+
+    struct flow_audit_entry *log_msg;
+
+    // Get a clean buffer from the log mempool
+    if (rte_mempool_get(ctx->log_pool, (void **)&log_msg) == 0) {
+        // Deep copy the snapshot
+        rte_memcpy(log_msg, entry, sizeof(*log_msg));
+
+        // Push to the ring for the background logger lcore
+        if (rte_ring_enqueue(ctx->audit_ring, log_msg) < 0) {
+            rte_mempool_put(ctx->log_pool, log_msg); // Drop if ring full
+
+        }
+    }
+}
 
 //static inline void scan_for_logging(struct audit_ctx *ctx, uint32_t, uint64_t);
 static inline void
@@ -80,24 +99,7 @@ scan_for_logging(struct audit_ctx *ctx, uint32_t timeout, uint64_t now) {
         }
     }
 }
-//static inline void move_to_audit_ring(struct audit_ctx *ctx, struct flow_audit_entry *);
-static inline void
-move_to_audit_ring(struct audit_ctx *ctx, struct flow_audit_entry *entry) {
 
-    struct flow_audit_entry *log_msg;
-
-    // Get a clean buffer from the log mempool
-    if (rte_mempool_get(ctx->log_pool, (void **)&log_msg) == 0) {
-        // Deep copy the snapshot
-        rte_memcpy(log_msg, entry, sizeof(*log_msg));
-
-        // Push to the ring for the background logger lcore
-        if (rte_ring_enqueue(ctx->audit_ring, log_msg) < 0) {
-            rte_mempool_put(ctx->log_pool, log_msg); // Drop if ring full
-
-        }
-    }
-}
 
 //static inline void check_udp_payload_encryption(const uint8_t *, uint16_t, struct flow_audit_entry *);
 /**

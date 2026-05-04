@@ -124,7 +124,7 @@ int main(int argc, char **argv)
     struct rte_mbuf *bufs[BURST_SIZE];
     struct rte_eth_stats stats;
     uint64_t last_stat_print = 0;
-    struct port_config net_port[RTE_MAX_ETHPORTS];
+    //struct port_config net_port[RTE_MAX_ETHPORTS];
     struct flow_audit_entry *entry = malloc(sizeof(*entry));
     uint64_t clock_rate = rte_get_tsc_hz();
     struct rte_lpm *lpmv4, *lpmv6;
@@ -346,7 +346,7 @@ int main(int argc, char **argv)
                     entry->last_seen = now;
                     entry->packet_count = 0;
                     entry->no_encrypted = 0;
-                    rte_strscpy(entry->log_state, "IN PROGRESS", 16));
+                    rte_strscpy(entry->log_state, "IN PROGRESS", 16);
                 }
 
                 printf("IPv4 received\n");
@@ -467,7 +467,7 @@ static inline struct flow_audit_entry *
 get_flow_entry(struct rte_hash *flow_table, struct flow_key *key, uint64_t now,
                 uint64_t timeout, uint32_t bytes)
 {
-    struct flow_audit_entry *entry
+    struct flow_audit_entry *entry;
     int ret = rte_hash_lookup(flow_table, key);
 
     if (likely(ret >= 0)) {

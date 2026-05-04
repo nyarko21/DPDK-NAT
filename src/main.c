@@ -671,7 +671,7 @@ audit_consumer(void *arg)
 
         for (unsigned int i = 0; i < n; i++) {
             struct flow_audit_entry *entry = entries[i];
-            char buf[2048];
+            //char buf[2048];
             char s_ip_str[INET_ADDRSTRLEN];
             char d_ip_str[INET_ADDRSTRLEN];
             char time_str[9];
@@ -707,7 +707,7 @@ audit_consumer(void *arg)
             }
 
             if (entry->packet_count > 0) {
-                encryption_ratio = (double)(entry->no_encrypted / entry->packet_count);
+                encryption_ratio = (double)entry->no_encrypted / entry->packet_count;
             }
 
             // CEF Formatting Logic
@@ -747,7 +747,7 @@ audit_consumer(void *arg)
                 entry->log_state    // log state, partial or complete
             );*/
 
-            if (unlikely(write(fd, buf, len) < 0)) {
+            if (unlikely(write(fd, cef_buf, len) < 0)) {
                 rte_exit(EXIT_FAILURE, "cannot write to log file.\n");
             }
 

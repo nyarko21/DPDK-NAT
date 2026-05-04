@@ -126,14 +126,12 @@ int main(int argc, char **argv)
     uint64_t last_stat_print = 0;
     //struct port_config net_port[RTE_MAX_ETHPORTS];
     struct flow_audit_entry *entry = malloc(sizeof(*entry));
-    uint64_t clock_rate = rte_get_tsc_hz();
     struct rte_lpm *lpmv4, *lpmv6;
     struct rte_ring *audit_ring;
+    uint64_t clock_rate, timeout;
     struct audit_ctx *ctx = malloc(sizeof(*ctx));
     ctx->start_cycles = rte_get_timer_cycles();
     ctx->start_time = time(NULL);
-    ctx->hz = clock_rate;
-    uint64_t timeout = clock_rate * 10; // 10-second timeout
 
     const char *v4filename = "afrinic-gh-ipv4-cidr.txt";
     const char *v6filename = "afrinic-gh-ipv6-cidr.txt";
@@ -147,6 +145,13 @@ int main(int argc, char **argv)
     if (ret < 0) {
         rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
     }
+
+    clock_rate = rte_get_tsc_hz();
+    if (clock_rate == 0) {
+        rte_exit(EXIT_FAILURE, "CRITICAL: CPU frequency is 0. Timestamping impossible.\n");
+    }
+    ctx->hz = clock_rate;
+    timeout = clock_rate * 10; // 10-second timeout
 
     // 2. Check available ports
     nb_ports = rte_eth_dev_count_avail();
@@ -510,11 +515,15 @@ load_asn_db(const char *path) {
 
     // Map file to memory for fast parsing
     char *map = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (map == MAP_FAILED) { close(fd); return -1; }
+    if (map == MAP_FAILED) {
+        close(fd);
+        return -1;
+    }
 
     // Count lines to allocate exact memory
     for (long i = 0; i < st.st_size; i++) {
-        if (map[i] == '\n') total_asn_entries++;
+        if (map[i] == '\n')
+            total_asn_entries++;
     }
 
     // Allocate in Hugepages for the Logger Core
@@ -634,12 +643,8 @@ audit_consumer(void *arg)
     time_t start_time = ctx->start_time;
     uint64_t hz = ctx->hz;
 
-    if (hz == 0) {
-        rte_exit(EXIT_FAILURE, "CRITICAL: CPU frequency is 0. Timestamping impossible.\n");
-    }
-
     /* SECURE FILE ACCESS */
-    int fd = open("audit.csv", O_WRONLY | O_APPEND | O_CREAT, 0600);
+    int fd = open("audit.csv", O_WRONLY | O_APPEND | O_CREAT, 0666);
     if (fd < 0) {
         rte_exit(EXIT_FAILURE, "CRITICAL: Audit log inaccessible. System must halt.\n");
     }

@@ -663,7 +663,6 @@ audit_consumer(void *arg)
         unsigned int n = rte_ring_dequeue_burst(ctx->audit_ring, (void **)entries, BURST_SIZE, NULL);
 
         if (unlikely(n == 0)) {
-            printf("zero in audit buffer\n");
             rte_pause();
             continue;
         }

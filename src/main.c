@@ -714,20 +714,25 @@ audit_consumer(void *arg)
             char cef_buf[2048];
             int len = snprintf(cef_buf, sizeof(cef_buf),
                 "CEF:0|%s|Sovereignty-Probe|1.0|100|High Value Flow|3|"
-                "rt=%s src=%s dst=%s spt=%u dpt=%u app=%s out=%lu cs1Label=CryptoRatio cs1=%.2f cn1Label=ASN cn1=%u sntdom=%s cs2Label=Country cs2=%s msg=%s\n",
-                entry->bank_name,     // Vendor
-                time_str,           // Receipt Time
-                s_ip_str,           // Source IP
-                d_ip_str,           // Dest IP
-                entry->flow.src_port,           // Source Port
-                entry->flow.dst_port,           // Dest Port
-                entry->protocol,    // Protocol
-                entry->byte_count,  // Bytes
-                encryption_ratio,   // Custom String 1 (Ratio)
-                entry->asn,         // Custom Number 1 (ASN)
-                entry->owner,       // Network Owner
-                entry->country,     // Country Code
-                entry->log_state    // Status Message
+                "rt=%s src=%s dst=%s spt=%u dpt=%u proto=%s out=%lu "
+                "cs1Label=EncryptionRatio cs1=%.2f "
+                "cn1Label=ASN cn1=%u "
+                "sntdom=%s "
+                "cs2Label=Country cs2=%s "
+                "msg=%s\n",
+                entry->bank_name,
+                time_str,
+                s_ip_str,
+                d_ip_str,
+                entry->flow.src_port,
+                (entry->flow.dst_port,
+                entry->protocol,                        // e.g., "TCP"
+                entry->byte_count,
+                encryption_ratio,
+                entry->asn,
+                entry->owner,                           // Ensure no raw pipes '|' inside
+                entry->country,
+                entry->log_state
             );
 
             // 5. GENERATE CSV ROW (Fintech Standard)

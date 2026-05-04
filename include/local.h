@@ -79,8 +79,11 @@ scan_for_logging(struct audit_ctx *ctx, uint32_t timeout, uint64_t now) {
         struct flow_audit_entry *e = &entries[current_scan_idx];
 
         if (now - e->last_seen > timeout) {
-            if (e->packet_count > 0)
+            if (e->packet_count > 0) {
+                printf("moving packets to audit ring\n");
                 move_to_audit_ring(ctx, e);
+            }
+
 
             rte_strscpy(e->log_state, "CLOSED", 16);
 

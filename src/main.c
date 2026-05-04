@@ -151,7 +151,7 @@ int main(int argc, char **argv)
         rte_exit(EXIT_FAILURE, "CRITICAL: CPU frequency is 0. Timestamping impossible.\n");
     }
     ctx->hz = clock_rate;
-    timeout = clock_rate * 10; // 10-second timeout
+    timeout = clock_rate * 2; // 10-second timeout
 
     // 2. Check available ports
     nb_ports = rte_eth_dev_count_avail();
@@ -248,7 +248,7 @@ int main(int argc, char **argv)
             rte_exit(EXIT_FAILURE, "Failed to create LPM table for ipv4\n");
         }
         load_ipv4_cidrs(lpmv4, v4filename); //load addresses into memory
-        load_asn_db(asn_country); // load ip to  asntocountry into memory
+        //load_asn_db(asn_country); // load ip to  asntocountry into memory
 
         audit_ring = rte_ring_create(
             "AUDIT_RING",           // Unique name for the ring
@@ -668,6 +668,8 @@ audit_consumer(void *arg)
             continue;
         }
 
+        printf("got packets\n");
+
         for (unsigned int i = 0; i < n; i++) {
             struct flow_audit_entry *entry = entries[i];
             char buf[2048];
@@ -747,7 +749,7 @@ audit_consumer(void *arg)
             );*/
 
             if (unlikely(write(fd, buf, len) < 0)) {
-                rte_exit(EXIT_FAILURE, "Storage Failure: Ghana Cyber Act Compliance Breach.\n");
+                rte_exit(EXIT_FAILURE, "cannot write to log file.\n");
             }
 
             // Return entry to the pool for reuse

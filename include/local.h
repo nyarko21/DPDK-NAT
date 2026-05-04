@@ -42,16 +42,15 @@ static inline int audit_consumer(void *arg);
 static inline const char* port_to_service(uint16_t);
 static inline const char* protocol_to_str(uint8_t);
 static inline void check_udp_payload_encryption(const uint8_t *, uint16_t, struct flow_audit_entry *);
-static inline void check_tcp_payload_encryption(const uint8_t *, uint16_t, struct flow_audit_entry*);
+static inline void check_tcp_payload_encryption(const uint8_t *, uint16_t, struct flow_audit_entry *);
 
 static inline int load_ipv4_cidrs(struct rte_lpm *, const char *);
 static inline int load_ipv6_cidrs(struct rte_lpm6 *, const char *);
 
 static inline struct asn_range* lookup_ip_metadata(uint32_t);
 static inline int load_asn_db(const char *);
-static inline void scan_for_logging(uint32_t, uint64_t);
-static inline void move_to_audit_ring(struct rte_ring *, struct rte_mempool *,
-    struct flow_audit_entry *);
+static inline void scan_for_logging(struct audit_ctx *ctx, uint32_t, uint64_t);
+static inline void move_to_audit_ring(struct audit_ctx *ctx, struct flow_audit_entry *);
 static inline struct flow_audit_entry *get_flow_entry(struct rte_hash *, struct flow_key *, uint64_t,
                 uint64_t, uint32_t);
 static inline void init_flow_table(int);

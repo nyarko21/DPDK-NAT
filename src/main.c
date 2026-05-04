@@ -270,7 +270,7 @@ int main(int argc, char **argv)
         if (nb_rx == 0)
             continue;
 
-        scan_for_logging(timeout, now);// scan and send a few logs
+        scan_for_logging(ctx, timeout, now);// scan and send a few logs
 
         printf("Received %" PRIu16 " packets\n", nb_rx);
         int i;
@@ -340,7 +340,7 @@ int main(int argc, char **argv)
 
                 // If the flow has moved > 10MB (High Value), log it faster
                 if (entry->byte_count > 10000000) {
-                    move_to_audit_ring(entry);
+                    move_to_audit_ring(ctx, entry);
                     entry->last_seen = now;
                     entry->packet_count = 0;
                     entry->no_encrypted = 0;
@@ -495,33 +495,32 @@ get_flow_entry(struct rte_hash *flow_table, struct flow_key *key, uint64_t now,
 }
 
 static inline void
-move_to_audit_ring(struct rte_ring *audit_ring, struct rte_mempool *audit_pool,
-    struct flow_audit_entry *entry) {
+move_to_audit_ring(struct audit_ctx *ctx, struct flow_audit_entry *entry) {
 
     struct flow_audit_entry *log_msg;
 
     // Get a clean buffer from the log mempool
-    if (rte_mempool_get(audit_pool, (void **)&log_msg) == 0) {
+    if (rte_mempool_get(ctx->log_pool, (void **)&log_msg) == 0) {
         // Deep copy the snapshot
         rte_memcpy(log_msg, entry, sizeof(*log_msg));
 
         // Push to the ring for the background logger lcore
-        if (rte_ring_enqueue(audit_ring, log_msg) < 0) {
-            rte_mempool_put(audit_pool, log_msg); // Drop if ring full
+        if (rte_ring_enqueue(ctx->audit_ring, log_msg) < 0) {
+            rte_mempool_put(ctx->log_pool, log_msg); // Drop if ring full
 
         }
     }
 }
 
 static inline void
-scan_for_logging(uint32_t timeout, uint64_t now) {
+scan_for_logging(struct audit_ctx *ctx, uint32_t timeout, uint64_t now) {
 
     for (int j = 0; j < ENTRIES_PER_SCAN; j++) {
         struct flow_audit_entry *e = &entries[current_scan_idx];
 
         if (now - e->last_seen > timeout) {
             if (e->packet_count > 0)
-                move_to_audit_ring(e);
+                move_to_audit_ring(ctx, e);
 
             rte_strscpy(e->log_state, "CLOSED", 16);
 

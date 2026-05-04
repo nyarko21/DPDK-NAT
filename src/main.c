@@ -489,6 +489,7 @@ get_flow_entry(struct rte_hash *flow_table, struct flow_key *key, uint64_t now,
         }
     } else {
         // new flow
+        printf("new flow\n");
         ret = rte_hash_add_key(flow_table, key);
         if (unlikely(ret < 0)) {
             printf("entry table full: size is %zu\n", rte_hash_count(flow_table));

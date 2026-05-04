@@ -153,7 +153,7 @@ int main(int argc, char **argv)
         rte_exit(EXIT_FAILURE, "CRITICAL: CPU frequency is 0. Timestamping impossible.\n");
     }
     ctx->hz = clock_rate;
-    timeout = clock_rate * 2; // 2-second timeout
+    timeout = clock_rate * 5; // 5-second timeout
 
     // 2. Check available ports
     nb_ports = rte_eth_dev_count_avail();

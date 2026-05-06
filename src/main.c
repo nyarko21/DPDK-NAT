@@ -135,8 +135,8 @@ int main(int argc, char **argv)
     ctx->start_cycles = rte_get_timer_cycles();
     ctx->start_time = time(NULL);
 
-    const char *v4filename = "afrinic-gh-ipv4-cidr.txt";
-    const char *v6filename = "afrinic-gh-ipv6-cidr.txt";
+    //const char *v4filename = "afrinic-gh-ipv4-cidr.txt";
+    //const char *v6filename = "afrinic-gh-ipv6-cidr.txt";
     const char *asn_country = "ip2asn-v4-u32.tsv";
 
     signal(SIGINT, signal_handler);
@@ -249,7 +249,7 @@ int main(int argc, char **argv)
         if (lpmv4 == NULL) {
             rte_exit(EXIT_FAILURE, "Failed to create LPM table for ipv4\n");
         }
-        load_ipv4_cidrs(lpmv4, v4filename); //load addresses into memory
+        //load_ipv4_cidrs(lpmv4, v4filename); //load addresses into memory
         //load_asn_db(asn_country); // load ip to  asntocountry into memory
 
         audit_ring = rte_ring_create(
@@ -316,10 +316,10 @@ int main(int argc, char **argv)
                 uint32_t bytes = m->pkt_len;
 
 
-                if (rte_lpm_lookup(lpmv4, flow.dst_ip, &next_hop) == 0) {
+                //if (rte_lpm_lookup(lpmv4, flow.dst_ip, &next_hop) == 0) {
                     // Ghana IP, continue;
-                    continue;
-                }
+                //    continue;
+                //}
 
                 /* not ghana IP, flagged */
 

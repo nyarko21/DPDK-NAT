@@ -653,7 +653,7 @@ audit_consumer(void *arg)
     uint64_t hz = ctx->hz;
 
     /* SECURE FILE ACCESS */
-    int fd = open("audit.csv", O_WRONLY | O_APPEND | O_CREAT, 0666);
+    int fd = open("/var/log/audit.csv", O_WRONLY | O_APPEND | O_CREAT, 0666);
     if (fd < 0) {
         rte_exit(EXIT_FAILURE, "CRITICAL: Audit log inaccessible. System must halt.\n");
     }
